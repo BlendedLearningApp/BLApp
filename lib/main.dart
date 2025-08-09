@@ -2,14 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/app_theme.dart';
 import 'routes/app_routes.dart';
 import 'bindings/initial_binding.dart';
 import 'translations/app_translations.dart';
 
+// Supabase configuration
+const supabaseUrl = 'https://dzjidtzkxhurnuhvobel.supabase.co';
+const supabaseKey =
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR6amlkdHpreGh1cm51aHZvYmVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ0NDAwMDAsImV4cCI6MjA3MDAxNjAwMH0.PX0Zou3YKz7FYwvofO1rlpLxSTY_CB7NP6aeT4QX4Ew';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Supabase
+  await Supabase.initialize(url: supabaseUrl, anonKey: supabaseKey);
+
+  // Force logout on app startup - user must login each time
+  print('🚀 App starting - clearing any existing session');
+  try {
+    await Supabase.instance.client.auth.signOut();
+    print('✅ Session cleared on app startup');
+  } catch (e) {
+    print('❌ Error clearing session on startup: $e');
+  }
 
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([

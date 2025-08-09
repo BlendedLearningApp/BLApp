@@ -25,7 +25,7 @@ class SignupView extends GetView<AuthController> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 20),
-              
+
               // Back button
               IconButton(
                 onPressed: () => Get.back(),
@@ -33,9 +33,9 @@ class SignupView extends GetView<AuthController> {
                 padding: EdgeInsets.zero,
                 alignment: Alignment.centerLeft,
               ),
-              
+
               const SizedBox(height: 20),
-              
+
               // Header
               Text(
                 'create_account'.tr,
@@ -53,9 +53,9 @@ class SignupView extends GetView<AuthController> {
                   color: AppTheme.textColor.withOpacity(0.7),
                 ),
               ),
-              
+
               const SizedBox(height: 40),
-              
+
               // Signup Form
               Card(
                 elevation: 8,
@@ -79,9 +79,9 @@ class SignupView extends GetView<AuthController> {
                         ),
                         textInputAction: TextInputAction.next,
                       ),
-                      
+
                       const SizedBox(height: 20),
-                      
+
                       // Email Field
                       TextFormField(
                         controller: emailController,
@@ -95,9 +95,9 @@ class SignupView extends GetView<AuthController> {
                         ),
                         textInputAction: TextInputAction.next,
                       ),
-                      
+
                       const SizedBox(height: 20),
-                      
+
                       // Role Selection
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -111,172 +111,187 @@ class SignupView extends GetView<AuthController> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          Obx(() => Row(
-                            children: [
-                              Expanded(
-                                child: RadioListTile<String>(
-                                  title: Text('student'.tr),
-                                  subtitle: Text('learn_courses'.tr),
-                                  value: 'student',
-                                  groupValue: selectedRole.value,
-                                  onChanged: (value) => selectedRole.value = value!,
-                                  activeColor: AppTheme.primaryColor,
+                          Obx(
+                            () => Row(
+                              children: [
+                                Expanded(
+                                  child: RadioListTile<String>(
+                                    title: Text('student'.tr),
+                                    subtitle: Text('learn_courses'.tr),
+                                    value: 'student',
+                                    groupValue: selectedRole.value,
+                                    onChanged: (value) =>
+                                        selectedRole.value = value!,
+                                    activeColor: AppTheme.primaryColor,
+                                  ),
                                 ),
-                              ),
-                              Expanded(
-                                child: RadioListTile<String>(
-                                  title: Text('instructor'.tr),
-                                  subtitle: Text('teach_courses'.tr),
-                                  value: 'instructor',
-                                  groupValue: selectedRole.value,
-                                  onChanged: (value) => selectedRole.value = value!,
-                                  activeColor: AppTheme.accentColor,
+                                Expanded(
+                                  child: RadioListTile<String>(
+                                    title: Text('instructor'.tr),
+                                    subtitle: Text('teach_courses'.tr),
+                                    value: 'instructor',
+                                    groupValue: selectedRole.value,
+                                    onChanged: (value) =>
+                                        selectedRole.value = value!,
+                                    activeColor: AppTheme.accentColor,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          )),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
-                      
+
                       const SizedBox(height: 20),
-                      
+
                       // Password Field
-                      Obx(() => TextFormField(
-                        controller: passwordController,
-                        obscureText: controller.isPasswordHidden.value,
-                        decoration: InputDecoration(
-                          labelText: 'password'.tr,
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              controller.isPasswordHidden.value
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                            ),
-                            onPressed: controller.togglePasswordVisibility,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        textInputAction: TextInputAction.next,
-                      )),
-                      
-                      const SizedBox(height: 20),
-                      
-                      // Confirm Password Field
-                      Obx(() => TextFormField(
-                        controller: confirmPasswordController,
-                        obscureText: controller.isPasswordHidden.value,
-                        decoration: InputDecoration(
-                          labelText: 'confirm_password'.tr,
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              controller.isPasswordHidden.value
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                            ),
-                            onPressed: controller.togglePasswordVisibility,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        textInputAction: TextInputAction.done,
-                      )),
-                      
-                      const SizedBox(height: 20),
-                      
-                      // Terms and Conditions
-                      Obx(() => CheckboxListTile(
-                        title: RichText(
-                          text: TextSpan(
-                            style: const TextStyle(color: AppTheme.textColor),
-                            children: [
-                              TextSpan(text: 'i_agree_to'.tr),
-                              TextSpan(
-                                text: ' ${'terms_conditions'.tr}',
-                                style: const TextStyle(
-                                  color: AppTheme.primaryColor,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                      Obx(
+                        () => TextFormField(
+                          controller: passwordController,
+                          obscureText: controller.isPasswordHidden.value,
+                          decoration: InputDecoration(
+                            labelText: 'password'.tr,
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                controller.isPasswordHidden.value
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
                               ),
-                            ],
+                              onPressed: controller.togglePasswordVisibility,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
+                          textInputAction: TextInputAction.next,
                         ),
-                        value: agreeToTerms.value,
-                        onChanged: (value) => agreeToTerms.value = value ?? false,
-                        activeColor: AppTheme.primaryColor,
-                        controlAffinity: ListTileControlAffinity.leading,
-                      )),
-                      
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Confirm Password Field
+                      Obx(
+                        () => TextFormField(
+                          controller: confirmPasswordController,
+                          obscureText: controller.isPasswordHidden.value,
+                          decoration: InputDecoration(
+                            labelText: 'confirm_password'.tr,
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                controller.isPasswordHidden.value
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                              onPressed: controller.togglePasswordVisibility,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          textInputAction: TextInputAction.done,
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Terms and Conditions
+                      Obx(
+                        () => CheckboxListTile(
+                          title: RichText(
+                            text: TextSpan(
+                              style: const TextStyle(color: AppTheme.textColor),
+                              children: [
+                                TextSpan(text: 'i_agree_to'.tr),
+                                TextSpan(
+                                  text: ' ${'terms_conditions'.tr}',
+                                  style: const TextStyle(
+                                    color: AppTheme.primaryColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          value: agreeToTerms.value,
+                          onChanged: (value) =>
+                              agreeToTerms.value = value ?? false,
+                          activeColor: AppTheme.primaryColor,
+                          controlAffinity: ListTileControlAffinity.leading,
+                        ),
+                      ),
+
                       const SizedBox(height: 30),
-                      
+
                       // Signup Button
                       SizedBox(
                         width: double.infinity,
                         height: 56,
-                        child: Obx(() => ElevatedButton(
-                          onPressed: controller.isLoading.value || !agreeToTerms.value
-                              ? null
-                              : () async {
-                                  if (_validateForm(
-                                    nameController.text,
-                                    emailController.text,
-                                    passwordController.text,
-                                    confirmPasswordController.text,
-                                  )) {
-                                    final success = await controller.signup(
-                                      name: nameController.text,
-                                      email: emailController.text,
-                                      password: passwordController.text,
-                                      role: _getUserRole(selectedRole.value),
-                                    );
-                                    
-                                    if (success) {
-                                      Get.snackbar(
-                                        'success'.tr,
-                                        'account_created_successfully'.tr,
-                                        snackPosition: SnackPosition.BOTTOM,
+                        child: Obx(
+                          () => ElevatedButton(
+                            onPressed:
+                                controller.isLoading.value ||
+                                    !agreeToTerms.value
+                                ? null
+                                : () async {
+                                    if (_validateForm(
+                                      nameController.text,
+                                      emailController.text,
+                                      passwordController.text,
+                                      confirmPasswordController.text,
+                                    )) {
+                                      final success = await controller.signup(
+                                        name: nameController.text,
+                                        email: emailController.text,
+                                        password: passwordController.text,
+                                        role: _getUserRole(selectedRole.value),
                                       );
+
+                                      if (success) {
+                                        Get.snackbar(
+                                          'success'.tr,
+                                          'account_created_successfully'.tr,
+                                          snackPosition: SnackPosition.BOTTOM,
+                                        );
+                                      }
                                     }
-                                  }
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primaryColor,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppTheme.primaryColor,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
-                          ),
-                          child: controller.isLoading.value
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white,
+                            child: controller.isLoading.value
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                : Text(
+                                    'create_account'.tr,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                )
-                              : Text(
-                                  'create_account'.tr,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                        )),
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 30),
-              
+
               // Already have account
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -284,7 +299,7 @@ class SignupView extends GetView<AuthController> {
                   Text(
                     'already_have_account'.tr,
                     style: TextStyle(
-                      color: AppTheme.textColor.withOpacity(0.7),
+                      color: AppTheme.textColor.withValues(alpha: 0.7),
                     ),
                   ),
                   TextButton(
@@ -306,27 +321,48 @@ class SignupView extends GetView<AuthController> {
     );
   }
 
-  bool _validateForm(String name, String email, String password, String confirmPassword) {
+  bool _validateForm(
+    String name,
+    String email,
+    String password,
+    String confirmPassword,
+  ) {
     if (name.isEmpty) {
-      Get.snackbar('error'.tr, 'please_enter_name'.tr, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'error'.tr,
+        'please_enter_name'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
       return false;
     }
-    
+
     if (email.isEmpty || !GetUtils.isEmail(email)) {
-      Get.snackbar('error'.tr, 'please_enter_valid_email'.tr, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'error'.tr,
+        'please_enter_valid_email'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
       return false;
     }
-    
+
     if (password.isEmpty || password.length < 6) {
-      Get.snackbar('error'.tr, 'password_min_length'.tr, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'error'.tr,
+        'password_min_length'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
       return false;
     }
-    
+
     if (password != confirmPassword) {
-      Get.snackbar('error'.tr, 'passwords_dont_match'.tr, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'error'.tr,
+        'passwords_dont_match'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
       return false;
     }
-    
+
     return true;
   }
 

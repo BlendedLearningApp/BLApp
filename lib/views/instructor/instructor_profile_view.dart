@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:blapp/config/app_theme.dart';
 import 'package:blapp/controllers/instructor_controller.dart';
+import 'package:blapp/controllers/auth_controller.dart';
 import 'package:blapp/widgets/common/custom_card.dart';
 
 class InstructorProfileView extends StatefulWidget {
@@ -22,20 +23,20 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
   final _currentPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  
+
   bool _isEditing = false;
   bool _showPasswordSection = false;
   String _selectedLanguage = 'en';
   bool _emailNotifications = true;
   bool _pushNotifications = false;
   bool _courseNotifications = true;
-  
+
   @override
   void initState() {
     super.initState();
     _loadUserData();
   }
-  
+
   @override
   void dispose() {
     _fullNameController.dispose();
@@ -49,22 +50,46 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
     _confirmPasswordController.dispose();
     super.dispose();
   }
-  
+
   void _loadUserData() {
-    // Mock instructor data - in real app, this would come from controller
-    _fullNameController.text = 'Dr. Sarah Ahmed';
-    _emailController.text = 'instructor@example.com';
-    _phoneController.text = '+966 55 987 6543';
-    _bioController.text = 'Experienced software engineer and educator with 10+ years in mobile development.';
-    _expertiseController.text = 'Flutter, Dart, Mobile Development, UI/UX Design';
-    _experienceController.text = '10';
+    // Load real user data from AuthController
+    final authController = Get.find<AuthController>();
+    final user = authController.currentUser;
+
+    print('👤 InstructorProfile - Loading user data:');
+    print('   User exists: ${user != null}');
+    print('   Name: ${user?.name ?? "NULL"}');
+    print('   Email: ${user?.email ?? "NULL"}');
+    print('   Phone: ${user?.phoneNumber ?? "NULL"}');
+
+    if (user != null) {
+      _fullNameController.text = user.name ?? '';
+      _emailController.text = user.email ?? '';
+      _phoneController.text = user.phoneNumber ?? '';
+      _bioController.text = ''; // Bio not available in UserModel yet
+      _expertiseController.text =
+          ''; // Expertise not available in UserModel yet
+      _experienceController.text =
+          ''; // Experience not available in UserModel yet
+
+      print('✅ Profile fields updated with real user data');
+    } else {
+      print('❌ No user data available, using empty fields');
+      _fullNameController.text = '';
+      _emailController.text = '';
+      _phoneController.text = '';
+      _bioController.text = '';
+      _expertiseController.text = '';
+      _experienceController.text = '';
+    }
+
     _selectedLanguage = Get.locale?.languageCode ?? 'en';
   }
 
   @override
   Widget build(BuildContext context) {
     final instructorController = Get.find<InstructorController>();
-    
+
     return Scaffold(
       appBar: AppBar(
         title: Text('profile'.tr),
@@ -100,27 +125,27 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               // Profile Picture Section
               _buildProfilePictureSection(),
               const SizedBox(height: 24),
-              
+
               // Personal Information
               _buildPersonalInfoSection(),
               const SizedBox(height: 24),
-              
+
               // Professional Information
               _buildProfessionalInfoSection(),
               const SizedBox(height: 24),
-              
+
               // Account Settings
               _buildAccountSettingsSection(),
               const SizedBox(height: 24),
-              
+
               // Password Section
               _buildPasswordSection(),
               const SizedBox(height: 24),
-              
+
               // Teaching Statistics
               _buildTeachingStatisticsSection(),
               const SizedBox(height: 24),
-              
+
               // Action Buttons
               if (_isEditing) _buildActionButtons(),
             ],
@@ -129,7 +154,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       ),
     );
   }
-  
+
   Widget _buildProfilePictureSection() {
     return Center(
       child: Stack(
@@ -154,7 +179,11 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
                   border: Border.all(color: Colors.white, width: 2),
                 ),
                 child: IconButton(
-                  icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                  icon: const Icon(
+                    Icons.camera_alt,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                   onPressed: _changeProfilePicture,
                 ),
               ),
@@ -163,7 +192,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       ),
     );
   }
-  
+
   Widget _buildPersonalInfoSection() {
     return CustomCard(
       child: Padding(
@@ -180,7 +209,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Full Name
             TextFormField(
               controller: _fullNameController,
@@ -200,7 +229,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               },
             ),
             const SizedBox(height: 16),
-            
+
             // Email
             TextFormField(
               controller: _emailController,
@@ -214,7 +243,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Phone
             TextFormField(
               controller: _phoneController,
@@ -228,7 +257,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Bio
             TextFormField(
               controller: _bioController,
@@ -247,7 +276,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       ),
     );
   }
-  
+
   Widget _buildProfessionalInfoSection() {
     return CustomCard(
       child: Padding(
@@ -264,7 +293,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Areas of Expertise
             TextFormField(
               controller: _expertiseController,
@@ -280,7 +309,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Years of Experience
             TextFormField(
               controller: _experienceController,
@@ -309,7 +338,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       ),
     );
   }
-  
+
   Widget _buildAccountSettingsSection() {
     return CustomCard(
       child: Padding(
@@ -326,7 +355,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             // Language Preference
             Row(
               children: [
@@ -365,16 +394,18 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
                       ),
                     ),
                   ],
-                  onChanged: _isEditing ? (value) {
-                    setState(() {
-                      _selectedLanguage = value!;
-                    });
-                  } : null,
+                  onChanged: _isEditing
+                      ? (value) {
+                          setState(() {
+                            _selectedLanguage = value!;
+                          });
+                        }
+                      : null,
                 ),
               ],
             ),
             const Divider(),
-            
+
             // Email Notifications
             Row(
               children: [
@@ -401,17 +432,19 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
                 ),
                 Switch(
                   value: _emailNotifications,
-                  onChanged: _isEditing ? (value) {
-                    setState(() {
-                      _emailNotifications = value;
-                    });
-                  } : null,
+                  onChanged: _isEditing
+                      ? (value) {
+                          setState(() {
+                            _emailNotifications = value;
+                          });
+                        }
+                      : null,
                   activeColor: AppTheme.accentColor,
                 ),
               ],
             ),
             const Divider(),
-            
+
             // Push Notifications
             Row(
               children: [
@@ -438,17 +471,19 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
                 ),
                 Switch(
                   value: _pushNotifications,
-                  onChanged: _isEditing ? (value) {
-                    setState(() {
-                      _pushNotifications = value;
-                    });
-                  } : null,
+                  onChanged: _isEditing
+                      ? (value) {
+                          setState(() {
+                            _pushNotifications = value;
+                          });
+                        }
+                      : null,
                   activeColor: AppTheme.accentColor,
                 ),
               ],
             ),
             const Divider(),
-            
+
             // Course Notifications
             Row(
               children: [
@@ -475,11 +510,13 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
                 ),
                 Switch(
                   value: _courseNotifications,
-                  onChanged: _isEditing ? (value) {
-                    setState(() {
-                      _courseNotifications = value;
-                    });
-                  } : null,
+                  onChanged: _isEditing
+                      ? (value) {
+                          setState(() {
+                            _courseNotifications = value;
+                          });
+                        }
+                      : null,
                   activeColor: AppTheme.accentColor,
                 ),
               ],
@@ -489,7 +526,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       ),
     );
   }
-  
+
   Widget _buildPasswordSection() {
     return CustomCard(
       child: Padding(
@@ -521,10 +558,10 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
                 ),
               ],
             ),
-            
+
             if (_showPasswordSection) ...[
               const SizedBox(height: 16),
-              
+
               // Current Password
               TextFormField(
                 controller: _currentPasswordController,
@@ -537,14 +574,15 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
                   ),
                 ),
                 validator: (value) {
-                  if (_showPasswordSection && (value == null || value.isEmpty)) {
+                  if (_showPasswordSection &&
+                      (value == null || value.isEmpty)) {
                     return 'please_enter_current_password'.tr;
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 16),
-              
+
               // New Password
               TextFormField(
                 controller: _newPasswordController,
@@ -557,14 +595,15 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
                   ),
                 ),
                 validator: (value) {
-                  if (_showPasswordSection && (value == null || value.length < 6)) {
+                  if (_showPasswordSection &&
+                      (value == null || value.length < 6)) {
                     return 'password_min_length'.tr;
                   }
                   return null;
                 },
               ),
               const SizedBox(height: 16),
-              
+
               // Confirm Password
               TextFormField(
                 controller: _confirmPasswordController,
@@ -577,7 +616,8 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
                   ),
                 ),
                 validator: (value) {
-                  if (_showPasswordSection && value != _newPasswordController.text) {
+                  if (_showPasswordSection &&
+                      value != _newPasswordController.text) {
                     return 'passwords_do_not_match'.tr;
                   }
                   return null;
@@ -589,7 +629,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       ),
     );
   }
-  
+
   Widget _buildTeachingStatisticsSection() {
     return CustomCard(
       child: Padding(
@@ -606,7 +646,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               ),
             ),
             const SizedBox(height: 16),
-            
+
             Row(
               children: [
                 Expanded(
@@ -629,7 +669,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
               ],
             ),
             const SizedBox(height: 12),
-            
+
             Row(
               children: [
                 Expanded(
@@ -656,8 +696,13 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       ),
     );
   }
-  
-  Widget _buildStatCard(String title, String value, IconData icon, Color color) {
+
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -689,7 +734,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       ),
     );
   }
-  
+
   Widget _buildActionButtons() {
     return Row(
       children: [
@@ -718,7 +763,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       ],
     );
   }
-  
+
   void _changeProfilePicture() {
     Get.snackbar(
       'profile_picture'.tr,
@@ -727,7 +772,7 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       colorText: Colors.white,
     );
   }
-  
+
   void _saveProfile() {
     if (_formKey.currentState!.validate()) {
       // Save profile data
@@ -735,12 +780,12 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
         _isEditing = false;
         _showPasswordSection = false;
       });
-      
+
       // Clear password fields
       _currentPasswordController.clear();
       _newPasswordController.clear();
       _confirmPasswordController.clear();
-      
+
       Get.snackbar(
         'profile_updated'.tr,
         'profile_updated_successfully'.tr,
@@ -749,13 +794,13 @@ class _InstructorProfileViewState extends State<InstructorProfileView> {
       );
     }
   }
-  
+
   void _cancelEdit() {
     setState(() {
       _isEditing = false;
       _showPasswordSection = false;
     });
-    
+
     // Reset form data
     _loadUserData();
     _currentPasswordController.clear();

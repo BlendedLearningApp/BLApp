@@ -45,18 +45,24 @@ class CourseModel {
       instructorId: json['instructor_id'],
       instructorName: json['instructor_name'],
       thumbnail: json['thumbnail'],
-      videos: (json['videos'] as List<dynamic>?)
-          ?.map((v) => VideoModel.fromJson(v))
-          .toList() ?? [],
-      quizzes: (json['quizzes'] as List<dynamic>?)
-          ?.map((q) => QuizModel.fromJson(q))
-          .toList() ?? [],
-      worksheets: (json['worksheets'] as List<dynamic>?)
-          ?.map((w) => WorksheetModel.fromJson(w))
-          .toList() ?? [],
+      videos:
+          (json['videos'] as List<dynamic>?)
+              ?.map((v) => VideoModel.fromJson(v))
+              .toList() ??
+          [],
+      quizzes:
+          (json['quizzes'] as List<dynamic>?)
+              ?.map((q) => QuizModel.fromJson(q))
+              .toList() ??
+          [],
+      worksheets:
+          (json['worksheets'] as List<dynamic>?)
+              ?.map((w) => WorksheetModel.fromJson(w))
+              .toList() ??
+          [],
       createdAt: DateTime.parse(json['created_at']),
-      updatedAt: json['updated_at'] != null 
-          ? DateTime.parse(json['updated_at']) 
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'])
           : null,
       isApproved: json['is_approved'] ?? false,
       enrolledStudents: json['enrolled_students'] ?? 0,
@@ -76,6 +82,23 @@ class CourseModel {
       'videos': videos.map((v) => v.toJson()).toList(),
       'quizzes': quizzes.map((q) => q.toJson()).toList(),
       'worksheets': worksheets.map((w) => w.toJson()).toList(),
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
+      'is_approved': isApproved,
+      'enrolled_students': enrolledStudents,
+      'rating': rating,
+      'category': category,
+    };
+  }
+
+  /// Convert to JSON for database insertion (without nested arrays)
+  Map<String, dynamic> toJsonForDatabase() {
+    return {
+      'title': title,
+      'description': description,
+      'instructor_id': instructorId,
+      // Note: instructor_name is not stored in courses table, it's fetched from profiles table via instructor_id
+      'thumbnail': thumbnail,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
       'is_approved': isApproved,
@@ -121,5 +144,3 @@ class CourseModel {
     );
   }
 }
-
-

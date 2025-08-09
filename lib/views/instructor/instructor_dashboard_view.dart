@@ -5,7 +5,7 @@ import '../../controllers/instructor_controller.dart';
 import '../../controllers/auth_controller.dart';
 import '../../controllers/navigation_controller.dart';
 import '../../widgets/bottom_navigation/instructor_bottom_nav.dart';
-import 'create_course_view.dart';
+import 'instructor_courses_view.dart';
 import 'manage_videos_view.dart';
 import 'instructor_quiz_manager_view.dart';
 import 'student_submissions_view.dart';
@@ -22,12 +22,47 @@ class InstructorDashboardView extends StatefulWidget {
 class _InstructorDashboardViewState extends State<InstructorDashboardView> {
   final InstructorController controller = Get.find<InstructorController>();
   final NavigationController navController = Get.find<NavigationController>();
+  final AuthController authController = Get.find<AuthController>();
 
   @override
   void initState() {
     super.initState();
     // Set dashboard as active tab when entering
     navController.setInstructorIndex(0);
+
+    // Load data when dashboard is displayed with better retry mechanism
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _waitForAuthAndLoadData();
+    });
+  }
+
+  Future<void> _waitForAuthAndLoadData() async {
+    final authController = Get.find<AuthController>();
+    print('📱 InstructorDashboard - Starting auth wait process');
+
+    // Wait up to 5 seconds for authentication to complete
+    int attempts = 0;
+    const maxAttempts = 10; // 5 seconds total
+
+    while (attempts < maxAttempts) {
+      print('📱 Attempt ${attempts + 1}/$maxAttempts:');
+      print('   Is logged in: ${authController.isLoggedIn}');
+      print('   Current user: ${authController.currentUser?.name ?? "NULL"}');
+
+      if (authController.isLoggedIn && authController.currentUser != null) {
+        print('📱 ✅ Authentication successful, loading instructor data');
+        await controller.loadInstructorData();
+        return;
+      }
+
+      attempts++;
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    print('📱 ❌ Authentication timeout after ${maxAttempts * 500}ms');
+    print(
+      '📱 Final state: logged in = ${authController.isLoggedIn}, user = ${authController.currentUser?.name ?? "NULL"}',
+    );
   }
 
   void _onNavTap(int index) {
@@ -36,8 +71,6 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
 
   @override
   Widget build(BuildContext context) {
-    final authController = Get.find<AuthController>();
-
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
       appBar: AppBar(
@@ -201,7 +234,7 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
               ),
             ),
             // My Courses
-            const CreateCourseView(),
+            const InstructorCoursesView(),
             // Videos
             const ManageVideosView(),
             // Quizzes
@@ -223,11 +256,22 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
   }
 
   Widget _buildWelcomeSection(AuthController authController) {
+    // Debug: Check current user data
+    final currentUser = authController.currentUser;
+    print('🏠 Dashboard Welcome Section Debug:');
+    print('   User exists: ${currentUser != null}');
+    print('   User name: ${currentUser?.name ?? "NULL"}');
+    print('   User email: ${currentUser?.email ?? "NULL"}');
+    print('   User role: ${currentUser?.role ?? "NULL"}');
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppTheme.accentColor, AppTheme.accentColor.withOpacity(0.8)],
+          colors: [
+            AppTheme.accentColor,
+            AppTheme.accentColor.withValues(alpha: 0.8),
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -240,7 +284,7 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${'welcome'.tr}, ${authController.currentUser?.name ?? 'User'}!',
+                  '${'welcome'.tr}, ${currentUser?.name ?? 'User'}!',
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -252,7 +296,7 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
                   'ready_to_teach'.tr,
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.white.withOpacity(0.9),
+                    color: Colors.white.withValues(alpha: 0.9),
                   ),
                 ),
               ],
@@ -261,7 +305,7 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Icon(Icons.school, size: 32, color: Colors.white),
@@ -325,7 +369,7 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -348,7 +392,7 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
             title,
             style: TextStyle(
               fontSize: 12,
-              color: AppTheme.textColor.withOpacity(0.6),
+              color: AppTheme.textColor.withValues(alpha: 0.6),
             ),
             textAlign: TextAlign.center,
           ),
@@ -399,7 +443,15 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
                 title: 'quiz_manager'.tr,
                 icon: Icons.quiz,
                 color: AppTheme.secondaryColor,
-                onTap: () => Get.toNamed('/instructor/quiz-manager'),
+                onTap: () {
+                  print(
+                    '🎯 Quiz Manager card clicked - navigating to Quizzes tab',
+                  );
+                  final navController = Get.find<NavigationController>();
+                  navController.navigateInstructor(
+                    3,
+                  ); // Navigate to Quizzes tab (index 3)
+                },
               ),
             ),
             const SizedBox(width: 12),
@@ -429,9 +481,9 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Column(
           children: [
@@ -498,7 +550,7 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
                         Container(
                           height: 100,
                           decoration: BoxDecoration(
-                            color: AppTheme.accentColor.withOpacity(0.1),
+                            color: AppTheme.accentColor.withValues(alpha: 0.1),
                             borderRadius: const BorderRadius.only(
                               topLeft: Radius.circular(12),
                               topRight: Radius.circular(12),
@@ -532,7 +584,9 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
                                 '${course.enrolledStudents} ${'students'.tr}',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: AppTheme.textColor.withOpacity(0.6),
+                                  color: AppTheme.textColor.withValues(
+                                    alpha: 0.6,
+                                  ),
                                 ),
                               ),
                             ],
@@ -594,7 +648,7 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: AppTheme.accentColor.withOpacity(0.1),
+            color: AppTheme.accentColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: const Icon(
@@ -620,7 +674,7 @@ class _InstructorDashboardViewState extends State<InstructorDashboardView> {
                 'Score: ${submission.score}/${submission.totalQuestions}',
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppTheme.textColor.withOpacity(0.6),
+                  color: AppTheme.textColor.withValues(alpha: 0.6),
                 ),
               ),
             ],

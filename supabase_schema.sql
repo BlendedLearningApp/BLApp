@@ -15,10 +15,50 @@ CREATE TABLE profiles (
     email TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('student', 'instructor', 'admin')),
+    approval_status TEXT NOT NULL DEFAULT 'pending_approval' CHECK (approval_status IN ('pending_approval', 'approved', 'rejected')),
     profile_image TEXT,
+    phone_number TEXT,
+    date_of_birth DATE,
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    approved_at TIMESTAMP WITH TIME ZONE,
+    approved_by UUID REFERENCES profiles(id),
+    rejection_reason TEXT
+);
+
+-- =====================================================
+-- 1.1. STUDENT PROFILES TABLE (additional student-specific fields)
+-- =====================================================
+CREATE TABLE student_profiles (
+    id UUID REFERENCES profiles(id) ON DELETE CASCADE PRIMARY KEY,
+    student_id TEXT UNIQUE NOT NULL,
+    academic_year TEXT,
+    major TEXT,
+    gpa DECIMAL(3,2),
+    enrollment_date DATE DEFAULT CURRENT_DATE,
+    emergency_contact_name TEXT,
+    emergency_contact_phone TEXT,
+    address TEXT,
+    city TEXT,
+    country TEXT DEFAULT 'Saudi Arabia'
+);
+
+-- =====================================================
+-- 1.2. INSTRUCTOR PROFILES TABLE (additional instructor-specific fields)
+-- =====================================================
+CREATE TABLE instructor_profiles (
+    id UUID REFERENCES profiles(id) ON DELETE CASCADE PRIMARY KEY,
+    instructor_id TEXT UNIQUE NOT NULL,
+    department TEXT NOT NULL,
+    qualifications TEXT NOT NULL,
+    years_of_experience INTEGER DEFAULT 0,
+    specialization TEXT,
+    education_level TEXT CHECK (education_level IN ('bachelor', 'master', 'phd', 'other')),
+    linkedin_profile TEXT,
+    research_interests TEXT,
+    office_location TEXT,
+    office_hours TEXT
 );
 
 -- =====================================================
@@ -204,13 +244,32 @@ CREATE TABLE analytics_events (
 -- Function to automatically create profile on user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+    user_role TEXT;
+    approval_status TEXT;
 BEGIN
-    INSERT INTO public.profiles (id, email, name, role)
+    user_role := COALESCE(NEW.raw_user_meta_data->>'role', 'student');
+
+    -- Admin accounts are auto-approved, others need approval
+    IF user_role = 'admin' THEN
+        approval_status := 'approved';
+    ELSE
+        approval_status := 'pending_approval';
+    END IF;
+
+    INSERT INTO public.profiles (id, email, name, role, approval_status, phone_number, date_of_birth)
     VALUES (
         NEW.id,
         NEW.email,
         COALESCE(NEW.raw_user_meta_data->>'name', NEW.email),
-        COALESCE(NEW.raw_user_meta_data->>'role', 'student')
+        user_role,
+        approval_status,
+        NEW.raw_user_meta_data->>'phone_number',
+        CASE
+            WHEN NEW.raw_user_meta_data->>'date_of_birth' IS NOT NULL
+            THEN (NEW.raw_user_meta_data->>'date_of_birth')::DATE
+            ELSE NULL
+        END
     );
     RETURN NEW;
 END;
@@ -314,3 +373,95 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER forum_likes_count_trigger
     AFTER INSERT OR DELETE ON forum_likes
     FOR EACH ROW EXECUTE FUNCTION update_forum_likes_count();
+
+-- =====================================================
+-- USER APPROVAL FUNCTIONS
+-- =====================================================
+
+-- Function to approve a user
+CREATE OR REPLACE FUNCTION public.approve_user(
+    user_id UUID,
+    admin_id UUID
+)
+RETURNS BOOLEAN AS $$
+BEGIN
+    UPDATE profiles
+    SET
+        approval_status = 'approved',
+        approved_at = NOW(),
+        approved_by = admin_id
+    WHERE id = user_id AND approval_status = 'pending_approval';
+
+    RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to reject a user
+CREATE OR REPLACE FUNCTION public.reject_user(
+    user_id UUID,
+    admin_id UUID,
+    reason TEXT DEFAULT NULL
+)
+RETURNS BOOLEAN AS $$
+BEGIN
+    UPDATE profiles
+    SET
+        approval_status = 'rejected',
+        approved_by = admin_id,
+        rejection_reason = reason
+    WHERE id = user_id AND approval_status = 'pending_approval';
+
+    RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to create role-specific profile
+CREATE OR REPLACE FUNCTION public.create_role_specific_profile(
+    profile_id UUID,
+    role_data JSONB
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+    user_role TEXT;
+BEGIN
+    SELECT role INTO user_role FROM profiles WHERE id = profile_id;
+
+    IF user_role = 'student' THEN
+        INSERT INTO student_profiles (
+            id, student_id, academic_year, major,
+            emergency_contact_name, emergency_contact_phone,
+            address, city, country
+        ) VALUES (
+            profile_id,
+            role_data->>'student_id',
+            role_data->>'academic_year',
+            role_data->>'major',
+            role_data->>'emergency_contact_name',
+            role_data->>'emergency_contact_phone',
+            role_data->>'address',
+            role_data->>'city',
+            COALESCE(role_data->>'country', 'Saudi Arabia')
+        );
+    ELSIF user_role = 'instructor' THEN
+        INSERT INTO instructor_profiles (
+            id, instructor_id, department, qualifications,
+            years_of_experience, specialization, education_level,
+            linkedin_profile, research_interests, office_location, office_hours
+        ) VALUES (
+            profile_id,
+            role_data->>'instructor_id',
+            role_data->>'department',
+            role_data->>'qualifications',
+            COALESCE((role_data->>'years_of_experience')::INTEGER, 0),
+            role_data->>'specialization',
+            role_data->>'education_level',
+            role_data->>'linkedin_profile',
+            role_data->>'research_interests',
+            role_data->>'office_location',
+            role_data->>'office_hours'
+        );
+    END IF;
+
+    RETURN TRUE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

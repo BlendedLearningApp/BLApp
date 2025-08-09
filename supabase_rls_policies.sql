@@ -28,9 +28,12 @@ ALTER TABLE analytics_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view profiles" ON profiles
     FOR SELECT USING (true);
 
--- Users can update their own profile
+-- Users can update their own profile (only if approved or pending)
 CREATE POLICY "Users can update own profile" ON profiles
-    FOR UPDATE USING (auth.uid() = id);
+    FOR UPDATE USING (
+        auth.uid() = id AND
+        approval_status IN ('approved', 'pending_approval')
+    );
 
 -- Users can insert their own profile (handled by trigger)
 CREATE POLICY "Users can insert own profile" ON profiles
@@ -66,13 +69,13 @@ CREATE POLICY "Admins can view all courses" ON courses
         )
     );
 
--- Instructors can create courses
+-- Instructors can create courses (only if approved)
 CREATE POLICY "Instructors can create courses" ON courses
     FOR INSERT WITH CHECK (
         instructor_id = auth.uid() AND
         EXISTS (
-            SELECT 1 FROM profiles 
-            WHERE id = auth.uid() AND role = 'instructor'
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'instructor' AND approval_status = 'approved'
         )
     );
 
@@ -493,6 +496,68 @@ CREATE POLICY "Admins can view all analytics" ON analytics_events
     FOR SELECT USING (
         EXISTS (
             SELECT 1 FROM profiles
-            WHERE id = auth.uid() AND role = 'admin'
+            WHERE id = auth.uid() AND role = 'admin' AND approval_status = 'approved'
+        )
+    );
+
+-- =====================================================
+-- STUDENT PROFILES TABLE POLICIES
+-- =====================================================
+
+-- Enable RLS
+ALTER TABLE student_profiles ENABLE ROW LEVEL SECURITY;
+
+-- Students can view and update their own profile
+CREATE POLICY "Students can manage own profile" ON student_profiles
+    FOR ALL USING (id = auth.uid());
+
+-- Instructors can view student profiles for their courses
+CREATE POLICY "Instructors can view student profiles" ON student_profiles
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM profiles p
+            WHERE p.id = auth.uid()
+            AND p.role = 'instructor'
+            AND p.approval_status = 'approved'
+        )
+    );
+
+-- Admins can view all student profiles
+CREATE POLICY "Admins can view all student profiles" ON student_profiles
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin' AND approval_status = 'approved'
+        )
+    );
+
+-- =====================================================
+-- INSTRUCTOR PROFILES TABLE POLICIES
+-- =====================================================
+
+-- Enable RLS
+ALTER TABLE instructor_profiles ENABLE ROW LEVEL SECURITY;
+
+-- Instructors can view and update their own profile
+CREATE POLICY "Instructors can manage own profile" ON instructor_profiles
+    FOR ALL USING (id = auth.uid());
+
+-- Students can view instructor profiles (for course information)
+CREATE POLICY "Students can view instructor profiles" ON instructor_profiles
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM profiles p
+            WHERE p.id = auth.uid()
+            AND p.role = 'student'
+            AND p.approval_status = 'approved'
+        )
+    );
+
+-- Admins can view all instructor profiles
+CREATE POLICY "Admins can view all instructor profiles" ON instructor_profiles
+    FOR SELECT USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE id = auth.uid() AND role = 'admin' AND approval_status = 'approved'
         )
     );

@@ -4,7 +4,9 @@ import '../../config/app_theme.dart';
 import '../../controllers/admin_controller.dart';
 import '../../controllers/auth_controller.dart';
 import '../../controllers/navigation_controller.dart';
+import '../../models/user_model.dart';
 import '../../widgets/bottom_navigation/admin_bottom_nav.dart';
+
 import 'user_management_view.dart';
 import 'content_management_view.dart';
 import 'analytics_view.dart';
@@ -187,6 +189,11 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
 
                       const SizedBox(height: 24),
 
+                      // User approval stats
+                      _buildUserApprovalStats(controller),
+
+                      const SizedBox(height: 24),
+
                       // Quick actions
                       _buildQuickActions(),
 
@@ -341,8 +348,15 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
   }
 
   int _getActiveSessions() {
-    // Mock active sessions calculation
-    return controller.allUsers.where((user) => user.isActive).length;
+    // Calculate active sessions based on real user data
+    // Users who have logged in within the last 24 hours
+    final now = DateTime.now();
+    final yesterday = now.subtract(const Duration(days: 1));
+
+    return controller.allUsers.where((user) {
+      // Check if user has recent activity (you can enhance this based on your user model)
+      return user.isActive && user.createdAt.isAfter(yesterday);
+    }).length;
   }
 
   Widget _buildStatCard({
@@ -486,23 +500,39 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
   }
 
   Widget _buildPendingApprovalsSection() {
+    final pendingUsers = controller.pendingApprovalUsers;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              'pending_approvals'.tr,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.textColor,
-              ),
+            Row(
+              children: [
+                Icon(
+                  Icons.people_outline,
+                  color: AppTheme.primaryColor,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'pending_user_approvals'.tr,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textColor,
+                  ),
+                ),
+              ],
             ),
-            TextButton(
-              onPressed: () => navController.navigateAdmin(2),
-              child: Text('view_all'.tr),
+            TextButton.icon(
+              onPressed: () {
+                final navController = Get.find<NavigationController>();
+                navController.setAdminIndex(1); // User management tab
+              },
+              icon: const Icon(Icons.arrow_forward, size: 16),
+              label: Text('view_all'.tr),
             ),
           ],
         ),
@@ -514,32 +544,32 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: controller.pendingCourses.isEmpty
+            child: pendingUsers.isEmpty
                 ? Center(
                     child: Column(
                       children: [
                         Icon(
                           Icons.check_circle,
                           size: 48,
-                          color: AppTheme.accentColor.withOpacity(0.5),
+                          color: AppTheme.accentColor.withValues(alpha: 0.5),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'no_pending_approvals'.tr,
+                          'no_pending_user_approvals'.tr,
                           style: TextStyle(
-                            color: AppTheme.textColor.withOpacity(0.6),
+                            color: AppTheme.textColor.withValues(alpha: 0.6),
                           ),
                         ),
                       ],
                     ),
                   )
                 : Column(
-                    children: controller.pendingCourses.take(3).map((course) {
+                    children: pendingUsers.take(3).map((user) {
                       return Column(
                         children: [
-                          _buildPendingApprovalItem(course),
-                          if (course != controller.pendingCourses.take(3).last)
-                            const Divider(),
+                          _buildPendingUserApprovalItem(user),
+                          if (user != pendingUsers.take(3).last)
+                            const Divider(height: 24),
                         ],
                       );
                     }).toList(),
@@ -550,60 +580,148 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
     );
   }
 
-  Widget _buildPendingApprovalItem(course) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppTheme.secondaryColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
+  Widget _buildPendingUserApprovalItem(user) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        children: [
+          // User Avatar
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: _getRoleColor(user.role).withValues(alpha: 0.2),
+            child: user.profileImage != null
+                ? ClipOval(
+                    child: Image.network(
+                      user.profileImage!,
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) => Icon(
+                        _getRoleIcon(user.role),
+                        color: _getRoleColor(user.role),
+                        size: 20,
+                      ),
+                    ),
+                  )
+                : Icon(
+                    _getRoleIcon(user.role),
+                    color: _getRoleColor(user.role),
+                    size: 20,
+                  ),
           ),
-          child: const Icon(
-            Icons.pending_actions,
-            color: AppTheme.secondaryColor,
-            size: 20,
+          const SizedBox(width: 12),
+
+          // User Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  user.name,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textColor,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  user.email,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.textColor.withValues(alpha: 0.6),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getRoleColor(user.role).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        user.role.toString().split('.').last.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          color: _getRoleColor(user.role),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatDate(user.createdAt),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: AppTheme.textColor.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+
+          // Action Buttons
+          Column(
             children: [
-              Text(
-                course.title,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppTheme.textColor,
+              SizedBox(
+                width: 70,
+                height: 28,
+                child: ElevatedButton(
+                  onPressed: () => _approveUserFromDashboard(user),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  child: Text(
+                    'approve'.tr,
+                    style: const TextStyle(fontSize: 10),
+                  ),
                 ),
               ),
-              Text(
-                '${'by'.tr} ${course.instructorName}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.textColor.withOpacity(0.6),
+              const SizedBox(height: 4),
+              SizedBox(
+                width: 70,
+                height: 28,
+                child: ElevatedButton(
+                  onPressed: () => _rejectUserFromDashboard(user),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  child: Text(
+                    'reject'.tr,
+                    style: const TextStyle(fontSize: 10),
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.check, color: AppTheme.accentColor),
-              onPressed: () => controller.approveCourse(course.id),
-              tooltip: 'approve'.tr,
-            ),
-            IconButton(
-              icon: const Icon(Icons.close, color: Colors.red),
-              onPressed: () => controller.rejectCourse(course.id),
-              tooltip: 'reject'.tr,
-            ),
-          ],
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -645,30 +763,90 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
   }
 
   List<Map<String, dynamic>> _getRecentActivities() {
-    // Mock recent activities
-    return [
-      {
+    List<Map<String, dynamic>> activities = [];
+    final now = DateTime.now();
+
+    // Add recent user registrations
+    final recentUsers = controller.allUsers
+        .where((user) => now.difference(user.createdAt).inDays <= 7)
+        .take(3)
+        .toList();
+
+    for (final user in recentUsers) {
+      activities.add({
         'type': 'user_registered',
-        'message': '${'new_user_registered'.tr}: John Doe',
-        'time': '2_hours_ago'.tr,
+        'message': '${'new_user_registered'.tr}: ${user.name}',
+        'time': _formatTimeAgo(user.createdAt),
         'icon': Icons.person_add,
         'color': AppTheme.accentColor,
-      },
-      {
+      });
+    }
+
+    // Add recent course submissions (pending courses)
+    final recentCourses = controller.pendingCourses
+        .where((course) => now.difference(course.createdAt).inDays <= 7)
+        .take(3)
+        .toList();
+
+    for (final course in recentCourses) {
+      activities.add({
         'type': 'course_submitted',
-        'message': '${'course_submitted_for_approval'.tr}: Flutter Basics',
-        'time': '4_hours_ago'.tr,
+        'message': '${'course_submitted_for_approval'.tr}: ${course.title}',
+        'time': _formatTimeAgo(course.createdAt),
         'icon': Icons.book,
         'color': AppTheme.secondaryColor,
-      },
-      {
-        'type': 'user_login',
-        'message': '${'admin_login'.tr}: System Administrator',
-        'time': '6_hours_ago'.tr,
-        'icon': Icons.login,
-        'color': AppTheme.primaryColor,
-      },
-    ];
+      });
+    }
+
+    // Add approved courses
+    final recentApprovedCourses = controller.allCourses
+        .where(
+          (course) =>
+              course.isApproved && now.difference(course.createdAt).inDays <= 7,
+        )
+        .take(2)
+        .toList();
+
+    for (final course in recentApprovedCourses) {
+      activities.add({
+        'type': 'course_approved',
+        'message': '${'course_approved'.tr}: ${course.title}',
+        'time': _formatTimeAgo(course.createdAt),
+        'icon': Icons.check_circle,
+        'color': Colors.green,
+      });
+    }
+
+    // Sort by most recent first and limit to 5 activities
+    activities.sort((a, b) => b['time'].compareTo(a['time']));
+
+    // If no recent activities, show a default message
+    if (activities.isEmpty) {
+      activities.add({
+        'type': 'system',
+        'message': 'no_recent_activities'.tr,
+        'time': 'now'.tr,
+        'icon': Icons.info_outline,
+        'color': AppTheme.textColor.withValues(alpha: 0.6),
+      });
+    }
+
+    return activities.take(5).toList();
+  }
+
+  String _formatTimeAgo(DateTime dateTime) {
+    final now = DateTime.now();
+    final difference = now.difference(dateTime);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays} ${'days_ago'.tr}';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours} ${'hours_ago'.tr}';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes} ${'minutes_ago'.tr}';
+    } else {
+      return 'just_now'.tr;
+    }
   }
 
   Widget _buildActivityItem(Map<String, dynamic> activity) {
@@ -706,6 +884,286 @@ class _AdminDashboardViewState extends State<AdminDashboardView> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildUserApprovalStats(AdminController controller) {
+    final stats = controller.userStatistics;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.people_outline,
+                  color: AppTheme.primaryColor,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'user_management'.tr,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textColor,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () {
+                    // Navigate to user management
+                    final navController = Get.find<NavigationController>();
+                    navController.setAdminIndex(1); // User management tab
+                  },
+                  icon: const Icon(Icons.arrow_forward, size: 16),
+                  label: Text('view_all'.tr),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Stats Grid
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final crossAxisCount = constraints.maxWidth > 600 ? 4 : 2;
+                final childAspectRatio = constraints.maxWidth > 600 ? 1.8 : 2.2;
+
+                return GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: childAspectRatio,
+                  children: [
+                    _buildUserStatCard(
+                      'pending_approvals'.tr,
+                      '${stats['pending_approvals'] ?? 0}',
+                      Icons.hourglass_empty,
+                      Colors.orange,
+                    ),
+                    _buildUserStatCard(
+                      'approved_users'.tr,
+                      '${stats['approved_users'] ?? 0}',
+                      Icons.check_circle,
+                      Colors.green,
+                    ),
+                    _buildUserStatCard(
+                      'total_students'.tr,
+                      '${stats['students'] ?? 0}',
+                      Icons.school,
+                      AppTheme.primaryColor,
+                    ),
+                    _buildUserStatCard(
+                      'total_instructors'.tr,
+                      '${stats['instructors'] ?? 0}',
+                      Icons.person_outline,
+                      AppTheme.secondaryColor,
+                    ),
+                  ],
+                );
+              },
+            ),
+
+            // Quick action for pending approvals
+            if ((stats['pending_approvals'] ?? 0) > 0) ...[
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.orange.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${stats['pending_approvals']} users waiting for approval',
+                        style: TextStyle(
+                          color: Colors.orange.shade700,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        final navController = Get.find<NavigationController>();
+                        navController.setAdminIndex(1);
+                      },
+                      child: Text(
+                        'review_now'.tr,
+                        style: TextStyle(
+                          color: Colors.orange.shade700,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUserStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isSmall = constraints.maxWidth < 150;
+
+        return Container(
+          padding: EdgeInsets.all(isSmall ? 12 : 16),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                flex: 2,
+                child: Icon(icon, color: color, size: isSmall ? 18 : 22),
+              ),
+              SizedBox(height: isSmall ? 2 : 4),
+              Flexible(
+                flex: 2,
+                child: Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: isSmall ? 14 : 16,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SizedBox(height: isSmall ? 1 : 2),
+              Flexible(
+                flex: 3,
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: isSmall ? 9 : 10,
+                    color: AppTheme.textColor.withValues(alpha: 0.7),
+                  ),
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Helper methods for user management
+  Color _getRoleColor(UserRole role) {
+    switch (role) {
+      case UserRole.student:
+        return AppTheme.primaryColor;
+      case UserRole.instructor:
+        return AppTheme.secondaryColor;
+      case UserRole.admin:
+        return Colors.purple;
+    }
+  }
+
+  IconData _getRoleIcon(UserRole role) {
+    switch (role) {
+      case UserRole.student:
+        return Icons.school;
+      case UserRole.instructor:
+        return Icons.person_outline;
+      case UserRole.admin:
+        return Icons.admin_panel_settings;
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
+  }
+
+  // User approval actions from dashboard
+  void _approveUserFromDashboard(user) {
+    Get.dialog(
+      AlertDialog(
+        title: Text('approve_user'.tr),
+        content: Text('Are you sure you want to approve ${user.name}?'),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              controller.approveUser(user.id);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('approve'.tr),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _rejectUserFromDashboard(user) {
+    Get.dialog(
+      AlertDialog(
+        title: Text('reject_user'.tr),
+        content: Text('Are you sure you want to reject ${user.name}?'),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              controller.rejectUser(user.id);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('reject'.tr),
+          ),
+        ],
+      ),
     );
   }
 }

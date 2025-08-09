@@ -16,12 +16,12 @@ class ProfileView extends StatefulWidget {
 class _ProfileViewState extends State<ProfileView> {
   final AuthController authController = Get.find<AuthController>();
   final _formKey = GlobalKey<FormState>();
-  
+
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _phoneController;
   late TextEditingController _bioController;
-  
+
   bool _isEditing = false;
   bool _isLoading = false;
 
@@ -33,10 +33,24 @@ class _ProfileViewState extends State<ProfileView> {
 
   void _initializeControllers() {
     final user = authController.currentUser;
+
+    // Debug: Log user data in profile view
+    print('👤 Profile View - User Data Debug:');
+    print('   User exists: ${user != null}');
+    print('   Name: ${user?.name ?? "NULL"}');
+    print('   Email: ${user?.email ?? "NULL"}');
+    print('   Phone: ${user?.phoneNumber ?? "NULL"}');
+    print('   Date of Birth: ${user?.dateOfBirth ?? "NULL"}');
+    print('   Profile Image: ${user?.profileImage ?? "NULL"}');
+    print('   Role: ${user?.role ?? "NULL"}');
+    print('   Approval Status: ${user?.approvalStatus ?? "NULL"}');
+
     _nameController = TextEditingController(text: user?.name ?? '');
     _emailController = TextEditingController(text: user?.email ?? '');
-    _phoneController = TextEditingController(text: '');
-    _bioController = TextEditingController(text: '');
+    _phoneController = TextEditingController(text: user?.phoneNumber ?? '');
+    _bioController = TextEditingController(
+      text: '',
+    ); // Bio not in UserModel yet
   }
 
   @override
@@ -73,9 +87,33 @@ class _ProfileViewState extends State<ProfileView> {
       ),
       body: Obx(() {
         final user = authController.currentUser;
+
+        // Debug: Log current user state in profile view
+        print('👤 Profile View Build - Current User State:');
+        print('   User exists: ${user != null}');
+        print('   User name: ${user?.name ?? "NULL"}');
+        print('   User email: ${user?.email ?? "NULL"}');
+        print('   User phone: ${user?.phoneNumber ?? "NULL"}');
+        print('   Is logged in: ${authController.isLoggedIn}');
+
         if (user == null) {
-          return const Center(
-            child: Text('User not found'),
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.person_off, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                Text(
+                  'user_not_found'.tr,
+                  style: const TextStyle(fontSize: 18, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'please_login_again'.tr,
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+              ],
+            ),
           );
         }
 
@@ -87,22 +125,22 @@ class _ProfileViewState extends State<ProfileView> {
               children: [
                 // Profile Header
                 _buildProfileHeader(user),
-                
+
                 const SizedBox(height: 24),
-                
+
                 // Profile Information
                 _buildProfileInformation(user),
-                
+
                 const SizedBox(height: 24),
-                
+
                 // Role-specific Information
                 _buildRoleSpecificInfo(user),
-                
+
                 const SizedBox(height: 24),
-                
+
                 // Account Actions
                 _buildAccountActions(),
-                
+
                 if (_isEditing) ...[
                   const SizedBox(height: 24),
                   _buildEditActions(),
@@ -145,7 +183,11 @@ class _ProfileViewState extends State<ProfileView> {
                       border: Border.all(color: Colors.white, width: 2),
                     ),
                     child: IconButton(
-                      icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                      icon: const Icon(
+                        Icons.camera_alt,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                       onPressed: _changeProfilePicture,
                       padding: const EdgeInsets.all(8),
                       constraints: const BoxConstraints(),
@@ -154,9 +196,9 @@ class _ProfileViewState extends State<ProfileView> {
                 ),
             ],
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Name
           Text(
             user.name,
@@ -166,16 +208,18 @@ class _ProfileViewState extends State<ProfileView> {
               color: AppTheme.textColor,
             ),
           ),
-          
+
           const SizedBox(height: 4),
-          
+
           // Role Badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: _getRoleColor(user.role).withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _getRoleColor(user.role).withOpacity(0.3)),
+              border: Border.all(
+                color: _getRoleColor(user.role).withOpacity(0.3),
+              ),
             ),
             child: Text(
               _getRoleDisplayName(user.role),
@@ -186,9 +230,9 @@ class _ProfileViewState extends State<ProfileView> {
               ),
             ),
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           // Join Date
           Text(
             'member_since'.tr + ' ${_formatDate(user.createdAt)}',
@@ -215,9 +259,9 @@ class _ProfileViewState extends State<ProfileView> {
               color: AppTheme.textColor,
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Name Field
           _buildFormField(
             label: 'full_name'.tr,
@@ -230,9 +274,9 @@ class _ProfileViewState extends State<ProfileView> {
               return null;
             },
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Email Field
           _buildFormField(
             label: 'email'.tr,
@@ -249,9 +293,9 @@ class _ProfileViewState extends State<ProfileView> {
               return null;
             },
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Phone Field
           _buildFormField(
             label: 'phone_number'.tr,
@@ -259,9 +303,9 @@ class _ProfileViewState extends State<ProfileView> {
             icon: Icons.phone,
             keyboardType: TextInputType.phone,
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Bio Field
           _buildFormField(
             label: 'bio'.tr,
@@ -288,9 +332,9 @@ class _ProfileViewState extends State<ProfileView> {
               color: AppTheme.textColor,
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           ..._buildRoleSpecificContent(user),
         ],
       ),
@@ -317,9 +361,7 @@ class _ProfileViewState extends State<ProfileView> {
         labelText: label,
         hintText: hintText,
         prefixIcon: Icon(icon),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: AppTheme.textColor.withOpacity(0.3)),
@@ -333,7 +375,9 @@ class _ProfileViewState extends State<ProfileView> {
           borderSide: BorderSide(color: AppTheme.textColor.withOpacity(0.1)),
         ),
         filled: !(_isEditing && enabled),
-        fillColor: (_isEditing && enabled) ? null : AppTheme.textColor.withOpacity(0.05),
+        fillColor: (_isEditing && enabled)
+            ? null
+            : AppTheme.textColor.withOpacity(0.05),
       ),
     );
   }
@@ -351,9 +395,9 @@ class _ProfileViewState extends State<ProfileView> {
               color: AppTheme.textColor,
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Change Password
           ListTile(
             leading: const Icon(Icons.lock, color: AppTheme.primaryColor),
@@ -362,31 +406,37 @@ class _ProfileViewState extends State<ProfileView> {
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: _changePassword,
           ),
-          
+
           const Divider(),
-          
+
           // Notification Settings
           ListTile(
-            leading: const Icon(Icons.notifications, color: AppTheme.primaryColor),
+            leading: const Icon(
+              Icons.notifications,
+              color: AppTheme.primaryColor,
+            ),
             title: Text('notification_settings'.tr),
             subtitle: Text('manage_notifications'.tr),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: _notificationSettings,
           ),
-          
+
           const Divider(),
-          
+
           // Privacy Settings
           ListTile(
-            leading: const Icon(Icons.privacy_tip, color: AppTheme.primaryColor),
+            leading: const Icon(
+              Icons.privacy_tip,
+              color: AppTheme.primaryColor,
+            ),
             title: Text('privacy_settings'.tr),
             subtitle: Text('manage_privacy'.tr),
             trailing: const Icon(Icons.arrow_forward_ios, size: 16),
             onTap: _privacySettings,
           ),
-          
+
           const Divider(),
-          
+
           // Logout
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
@@ -589,10 +639,7 @@ class _ProfileViewState extends State<ProfileView> {
         title: Text('confirm_logout'.tr),
         content: Text('are_you_sure_logout'.tr),
         actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: Text('cancel'.tr),
-          ),
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
           CustomButton(
             text: 'logout'.tr,
             type: ButtonType.primary,

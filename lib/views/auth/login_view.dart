@@ -20,7 +20,7 @@ class LoginView extends GetView<AuthController> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 60),
-              
+
               // Logo and title
               Center(
                 child: Column(
@@ -69,9 +69,9 @@ class LoginView extends GetView<AuthController> {
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 50),
-              
+
               // Login form
               Card(
                 elevation: 8,
@@ -93,9 +93,9 @@ class LoginView extends GetView<AuthController> {
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      
+
                       const SizedBox(height: 30),
-                      
+
                       // Email field
                       TextFormField(
                         controller: emailController,
@@ -108,69 +108,73 @@ class LoginView extends GetView<AuthController> {
                           ),
                         ),
                       ),
-                      
+
                       const SizedBox(height: 20),
-                      
+
                       // Password field
-                      Obx(() => TextFormField(
-                        controller: passwordController,
-                        obscureText: controller.isPasswordHidden.value,
-                        decoration: InputDecoration(
-                          labelText: 'password'.tr,
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              controller.isPasswordHidden.value
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
+                      Obx(
+                        () => TextFormField(
+                          controller: passwordController,
+                          obscureText: controller.isPasswordHidden.value,
+                          decoration: InputDecoration(
+                            labelText: 'password'.tr,
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                controller.isPasswordHidden.value
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                              onPressed: controller.togglePasswordVisibility,
                             ),
-                            onPressed: controller.togglePasswordVisibility,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
                         ),
-                      )),
-                      
+                      ),
+
                       const SizedBox(height: 30),
-                      
+
                       // Login button
-                      Obx(() => ElevatedButton(
-                        onPressed: controller.isLoading.value
-                            ? null
-                            : () => controller.login(
+                      Obx(
+                        () => ElevatedButton(
+                          onPressed: controller.isLoading.value
+                              ? null
+                              : () => controller.login(
                                   emailController.text,
                                   passwordController.text,
                                 ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primaryColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                           ),
-                        ),
-                        child: controller.isLoading.value
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
+                          child: controller.isLoading.value
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : Text(
+                                  'sign_in'.tr,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                              )
-                            : Text(
-                                'sign_in'.tr,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                      )),
+                        ),
+                      ),
                       const SizedBox(height: 16),
-                      
+
                       // Forgot password
                       Align(
                         alignment: Alignment.centerRight,
@@ -188,9 +192,9 @@ class LoginView extends GetView<AuthController> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 30),
-              
+
               // Demo accounts section
               Card(
                 elevation: 4,
@@ -211,7 +215,7 @@ class LoginView extends GetView<AuthController> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      
+
                       // Student demo
                       _buildDemoAccountButton(
                         role: 'student'.tr,
@@ -224,9 +228,9 @@ class LoginView extends GetView<AuthController> {
                           passwordController.text = 'student123';
                         },
                       ),
-                      
+
                       const SizedBox(height: 12),
-                      
+
                       // Instructor demo
                       _buildDemoAccountButton(
                         role: 'instructor'.tr,
@@ -239,9 +243,9 @@ class LoginView extends GetView<AuthController> {
                           passwordController.text = 'instructor123';
                         },
                       ),
-                      
+
                       const SizedBox(height: 12),
-                      
+
                       // Admin demo
                       _buildDemoAccountButton(
                         role: 'admin'.tr,
@@ -258,9 +262,9 @@ class LoginView extends GetView<AuthController> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 30),
-              
+
               // Don't have an account
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -272,7 +276,7 @@ class LoginView extends GetView<AuthController> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () => Get.toNamed('/signup'),
+                    onPressed: () => Get.toNamed('/role-selection'),
                     child: Text(
                       'create_account'.tr,
                       style: const TextStyle(
@@ -283,7 +287,7 @@ class LoginView extends GetView<AuthController> {
                   ),
                 ],
               ),
-              
+
               const SizedBox(height: 20),
             ],
           ),
@@ -317,11 +321,7 @@ class LoginView extends GetView<AuthController> {
                 color: color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(
-                icon,
-                color: color,
-                size: 20,
-              ),
+              child: Icon(icon, color: color, size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(

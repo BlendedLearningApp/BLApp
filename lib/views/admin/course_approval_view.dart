@@ -486,51 +486,24 @@ class _CourseApprovalViewState extends State<CourseApprovalView>
     AdminController controller,
     String status,
   ) {
-    // Mock course approval data - in real app this would come from controller
-    final allCourses = [
-      CourseModel(
-        id: '1',
-        title: 'Advanced Flutter Development',
-        description:
-            'Learn advanced Flutter concepts including state management, animations, and performance optimization.',
-        instructorId: 'instructor_1',
-        instructorName: 'Ahmed Hassan',
-        thumbnail: null,
-        category: 'Technology',
-        createdAt: DateTime.now().subtract(const Duration(days: 2)),
-        isApproved: status == 'approved',
-        enrolledStudents: 0,
-        rating: 0.0,
-      ),
-      CourseModel(
-        id: '2',
-        title: 'UI/UX Design Fundamentals',
-        description:
-            'Master the principles of user interface and user experience design with practical projects.',
-        instructorId: 'instructor_2',
-        instructorName: 'Sara Mohammed',
-        thumbnail: null,
-        category: 'Design',
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        isApproved: status == 'approved',
-        enrolledStudents: 0,
-        rating: 0.0,
-      ),
-      CourseModel(
-        id: '3',
-        title: 'Digital Marketing Strategy',
-        description:
-            'Comprehensive guide to digital marketing including SEO, social media, and content marketing.',
-        instructorId: 'instructor_3',
-        instructorName: 'Omar Al-Rashid',
-        thumbnail: null,
-        category: 'Marketing',
-        createdAt: DateTime.now().subtract(const Duration(hours: 5)),
-        isApproved: status == 'approved',
-        enrolledStudents: 0,
-        rating: 0.0,
-      ),
-    ];
+    // Get real courses from controller based on status
+    List<CourseModel> allCourses;
+
+    switch (status) {
+      case 'pending':
+        allCourses = controller.pendingCourses;
+        break;
+      case 'approved':
+        allCourses = controller.allCourses.where((c) => c.isApproved).toList();
+        break;
+      case 'rejected':
+        // For rejected courses, we need to track them separately
+        // For now, show empty list as rejected courses might be deleted
+        allCourses = <CourseModel>[];
+        break;
+      default:
+        allCourses = controller.allCourses;
+    }
 
     var filtered = allCourses.where((course) {
       // Apply search filter
@@ -764,18 +737,10 @@ class _CourseApprovalViewState extends State<CourseApprovalView>
         actions: [
           TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Get.back();
-              Get.snackbar(
-                'success'.tr,
-                'course_approved_successfully'.tr.replaceAll(
-                  '{course}',
-                  course.title,
-                ),
-                snackPosition: SnackPosition.BOTTOM,
-                backgroundColor: AppTheme.accentColor,
-                colorText: Colors.white,
-              );
+              final adminController = Get.find<AdminController>();
+              await adminController.approveCourse(course.id);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.accentColor,
@@ -817,7 +782,7 @@ class _CourseApprovalViewState extends State<CourseApprovalView>
         actions: [
           TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (reasonController.text.trim().isEmpty) {
                 Get.snackbar(
                   'error'.tr,
@@ -830,16 +795,8 @@ class _CourseApprovalViewState extends State<CourseApprovalView>
               }
 
               Get.back();
-              Get.snackbar(
-                'success'.tr,
-                'course_rejected_successfully'.tr.replaceAll(
-                  '{course}',
-                  course.title,
-                ),
-                snackPosition: SnackPosition.BOTTOM,
-                backgroundColor: Colors.red,
-                colorText: Colors.white,
-              );
+              final adminController = Get.find<AdminController>();
+              await adminController.rejectCourse(course.id);
             },
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: Text('reject'.tr),

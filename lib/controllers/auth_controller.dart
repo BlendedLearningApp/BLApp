@@ -1,12 +1,11 @@
 import 'package:get/get.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_model.dart';
-import '../services/dummy_data_service.dart';
+import '../services/supabase_service.dart';
 import '../routes/app_routes.dart';
 
 class AuthController extends GetxController {
-  final DummyDataService _dataService = Get.find<DummyDataService>();
-
   final Rx<UserModel?> _currentUser = Rx<UserModel?>(null);
   final RxBool _isLoading = false.obs;
   final RxBool _isLoggedIn = false.obs;
@@ -17,26 +16,104 @@ class AuthController extends GetxController {
   bool get isLoggedIn => _isLoggedIn.value;
   RxBool get isPasswordHidden => _isPasswordHidden;
 
+  @override
+  void onInit() {
+    super.onInit();
+    print('🔄 AuthController.onInit() called');
+
+    // Don't force logout during navigation - only check auth state
+    _checkAuthState();
+    _listenToAuthChanges();
+  }
+
   void togglePasswordVisibility() {
     _isPasswordHidden.value = !_isPasswordHidden.value;
   }
 
+  void _checkAuthState() async {
+    print('🔍 AuthController._checkAuthState() called');
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user != null) {
+      print('✅ Supabase user found: ${user.id} (${user.email})');
+      try {
+        print('📥 Fetching user profile from database...');
+        final profile = await SupabaseService.getCurrentUserProfile();
+        if (profile != null) {
+          print('✅ User profile loaded: ${profile.name} (${profile.role})');
+          _currentUser.value = profile;
+          _isLoggedIn.value = true;
+
+          // DON'T auto-navigate - user should login manually each time
+          print('✅ User session restored but not auto-navigating');
+        } else {
+          print('❌ User profile not found in database');
+          // Sign out if profile not found
+          await SupabaseService.signOut();
+        }
+      } catch (e) {
+        print('❌ Error loading user profile: $e');
+        // Sign out on error
+        await SupabaseService.signOut();
+      }
+    } else {
+      print('❌ No Supabase user found - user needs to login');
+    }
+  }
+
+  void _listenToAuthChanges() {
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+      final AuthChangeEvent event = data.event;
+      final Session? session = data.session;
+
+      if (event == AuthChangeEvent.signedIn && session?.user != null) {
+        try {
+          final profile = await SupabaseService.getCurrentUserProfile();
+          if (profile != null) {
+            _currentUser.value = profile;
+            _isLoggedIn.value = true;
+          }
+        } catch (e) {
+          print('Error loading user profile after sign in: $e');
+        }
+      } else if (event == AuthChangeEvent.signedOut) {
+        _currentUser.value = null;
+        _isLoggedIn.value = false;
+      }
+    });
+  }
+
+  // Enhanced login method with approval status checking
   Future<bool> login(String email, String password) async {
     try {
       _isLoading.value = true;
 
-      // Simulate network delay
-      await Future.delayed(const Duration(seconds: 1));
+      final result = await SupabaseService.checkLoginPermission(
+        email,
+        password,
+      );
 
-      final user = _dataService.authenticateUser(email, password);
-
-      if (user != null) {
-        _currentUser.value = user;
+      if (result['allowed'] == true) {
+        final profile = result['profile'] as UserModel;
+        _currentUser.value = profile;
         _isLoggedIn.value = true;
 
         // Save login state
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user_id', user.id);
+        await prefs.setString('user_id', profile.id);
+
+        // Log detailed user information
+        print('✅ Login successful! User details:');
+        print('   👤 ID: ${profile.id}');
+        print('   📧 Email: ${profile.email}');
+        print('   🏷️ Name: ${profile.name}');
+        print('   👔 Role: ${profile.role}');
+        print('   ✅ Approval Status: ${profile.approvalStatus}');
+        print('   📱 Phone: ${profile.phoneNumber ?? "Not provided"}');
+        print('   🎂 Date of Birth: ${profile.dateOfBirth ?? "Not provided"}');
+        print(
+          '   🖼️ Profile Image: ${profile.profileImage ?? "Not provided"}',
+        );
 
         Get.snackbar(
           'success'.tr,
@@ -44,12 +121,30 @@ class AuthController extends GetxController {
           snackPosition: SnackPosition.BOTTOM,
         );
 
-        _navigateToRoleDashboard(user.role);
+        _navigateToRoleDashboard(profile.role);
         return true;
       } else {
+        // Handle different rejection reasons
+        String errorMessage;
+        switch (result['reason']) {
+          case 'pending_approval':
+            errorMessage = 'account_pending_approval'.tr;
+            // Navigate to waiting screen
+            Get.offAllNamed('/waiting-approval');
+            return false;
+          case 'account_rejected':
+            errorMessage = 'account_rejected_login'.tr;
+            break;
+          case 'invalid_credentials':
+            errorMessage = 'invalid_credentials'.tr;
+            break;
+          default:
+            errorMessage = 'login_error'.tr;
+        }
+
         Get.snackbar(
           'error'.tr,
-          'login_error'.tr,
+          errorMessage,
           snackPosition: SnackPosition.BOTTOM,
         );
         return false;
@@ -80,9 +175,28 @@ class AuthController extends GetxController {
     }
   }
 
+  // Public method for external navigation
+  void navigateToRoleDashboard(UserRole role) {
+    _navigateToRoleDashboard(role);
+  }
+
+  // Refresh user profile to check for approval status changes
+  Future<void> refreshUserProfile() async {
+    try {
+      final profile = await SupabaseService.refreshUserProfile();
+      if (profile != null) {
+        _currentUser.value = profile;
+      }
+    } catch (e) {
+      // Handle error silently or show a message
+    }
+  }
+
   Future<void> logout() async {
     try {
       _isLoading.value = true;
+
+      await SupabaseService.signOut();
 
       // Clear saved login state
       final prefs = await SharedPreferences.getInstance();
@@ -99,7 +213,11 @@ class AuthController extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      print('Error during logout: $e');
+      Get.snackbar(
+        'error'.tr,
+        'logout_error'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } finally {
       _isLoading.value = false;
     }
@@ -109,10 +227,7 @@ class AuthController extends GetxController {
     try {
       _isLoading.value = true;
 
-      // Simulate network delay
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      _dataService.updateUser(updatedUser);
+      await SupabaseService.updateProfile(updatedUser);
       _currentUser.value = updatedUser;
 
       // Update saved user data
@@ -152,58 +267,60 @@ class AuthController extends GetxController {
     }
   }
 
-  // Signup method
-  Future<bool> signup({
+  // Enhanced signup method with role-specific data
+  Future<bool> enhancedSignup({
     required String name,
     required String email,
     required String password,
     required UserRole role,
+    required String phoneNumber,
+    required DateTime? dateOfBirth,
+    required Map<String, dynamic> roleData,
   }) async {
     try {
       _isLoading.value = true;
 
-      // Simulate network delay
-      await Future.delayed(const Duration(seconds: 1));
+      // Prepare user metadata
+      final userMetadata = {
+        'name': name,
+        'role': role.toString().split('.').last,
+        'phone_number': phoneNumber,
+        'date_of_birth': dateOfBirth?.toIso8601String(),
+      };
 
-      // Check if user already exists
-      if (_dataService.getUserByEmail(email) != null) {
+      final response = await SupabaseService.enhancedSignUp(
+        email: email,
+        password: password,
+        userMetadata: userMetadata,
+        roleData: roleData,
+      );
+
+      if (response['success'] == true) {
+        // For pending approval accounts, we don't need to set login state
+        // The user will be redirected to waiting approval screen
+        Get.snackbar(
+          'success'.tr,
+          'account_created_pending_approval'.tr,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+
+        // Log the successful creation for debugging
+        print('✅ Account created successfully for: $email');
+        print('📋 User ID: ${response['user_id']}');
+        print('🔄 Status: Pending approval');
+
+        return true;
+      } else {
+        // Log the error for debugging
+        print('❌ Signup failed: ${response['error']}');
+
         Get.snackbar(
           'error'.tr,
-          'email_already_exists'.tr,
+          response['error'] ?? 'signup_error'.tr,
           snackPosition: SnackPosition.BOTTOM,
         );
         return false;
       }
-
-      // Create new user
-      final newUser = UserModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        email: email,
-        name: name,
-        role: role,
-        createdAt: DateTime.now(),
-        isActive: true,
-      );
-
-      // Add user to data service
-      _dataService.createUser(newUser);
-
-      // Auto-login the new user
-      _currentUser.value = newUser;
-      _isLoggedIn.value = true;
-
-      // Save login state
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('user_id', newUser.id);
-
-      Get.snackbar(
-        'success'.tr,
-        'account_created_successfully'.tr,
-        snackPosition: SnackPosition.BOTTOM,
-      );
-
-      _navigateToRoleDashboard(role);
-      return true;
     } catch (e) {
       Get.snackbar(
         'error'.tr,
@@ -216,27 +333,31 @@ class AuthController extends GetxController {
     }
   }
 
-  // Send password reset email (mocked)
+  // Original signup method (kept for backward compatibility)
+  Future<bool> signup({
+    required String name,
+    required String email,
+    required String password,
+    required UserRole role,
+  }) async {
+    return enhancedSignup(
+      name: name,
+      email: email,
+      password: password,
+      role: role,
+      phoneNumber: '',
+      dateOfBirth: null,
+      roleData: {},
+    );
+  }
+
+  // Send password reset email
   Future<bool> sendPasswordResetEmail(String email) async {
     try {
       _isLoading.value = true;
 
-      // Simulate network delay
-      await Future.delayed(const Duration(seconds: 1));
+      await Supabase.instance.client.auth.resetPasswordForEmail(email);
 
-      // Check if user exists
-      final user = _dataService.getUserByEmail(email);
-      if (user == null) {
-        Get.snackbar(
-          'error'.tr,
-          'email_not_found'.tr,
-          snackPosition: SnackPosition.BOTTOM,
-        );
-        return false;
-      }
-
-      // In a real app, this would send an actual email
-      // For demo purposes, we'll just show a success message
       Get.snackbar(
         'success'.tr,
         'password_reset_sent'.tr,

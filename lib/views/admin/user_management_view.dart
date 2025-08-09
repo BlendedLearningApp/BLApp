@@ -25,11 +25,27 @@ class _UserManagementViewState extends State<UserManagementView>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+
+    // Add listener to refresh data when tabs change
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (!_tabController.indexIsChanging) {
+      final adminController = Get.find<AdminController>();
+
+      // Refresh data when switching to pending approvals tab (index 1)
+      if (_tabController.index == 1) {
+        // Use the more efficient refresh method for pending approvals
+        adminController.refreshPendingApprovals();
+      }
+    }
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
@@ -60,8 +76,43 @@ class _UserManagementViewState extends State<UserManagementView>
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
+          isScrollable: true,
           tabs: [
             Tab(text: 'all_users'.tr),
+            Tab(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('pending_approvals'.tr),
+                  const SizedBox(width: 4),
+                  Obx(() {
+                    final pendingCount =
+                        adminController.pendingApprovalUsers.length;
+                    if (pendingCount > 0) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$pendingCount',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  }),
+                ],
+              ),
+            ),
             Tab(text: 'active_users'.tr),
             Tab(text: 'inactive_users'.tr),
           ],
@@ -78,6 +129,9 @@ class _UserManagementViewState extends State<UserManagementView>
               controller: _tabController,
               children: [
                 _buildUsersList(adminController, null), // All users
+                _buildPendingApprovalsList(
+                  adminController,
+                ), // Pending approvals
                 _buildUsersList(adminController, true), // Active users
                 _buildUsersList(adminController, false), // Inactive users
               ],
@@ -178,6 +232,61 @@ class _UserManagementViewState extends State<UserManagementView>
         fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
       ),
     );
+  }
+
+  Widget _buildPendingApprovalsList(AdminController controller) {
+    return Obx(() {
+      if (controller.isLoading.value) {
+        return const LoadingWidget();
+      }
+
+      final pendingUsers = controller.pendingApprovalUsers;
+
+      if (pendingUsers.isEmpty) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.check_circle_outline,
+                size: 64,
+                color: Colors.green.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'no_pending_user_approvals'.tr,
+                style: TextStyle(
+                  fontSize: 16,
+                  color: AppTheme.textColor.withValues(alpha: 0.6),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'All users have been reviewed!',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppTheme.textColor.withValues(alpha: 0.5),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        );
+      }
+
+      return RefreshIndicator(
+        onRefresh: () => controller.refreshPendingApprovals(),
+        child: ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: pendingUsers.length,
+          itemBuilder: (context, index) {
+            final user = pendingUsers[index];
+            return _buildPendingUserCard(user, controller);
+          },
+        ),
+      );
+    });
   }
 
   Widget _buildUsersList(AdminController controller, bool? activeFilter) {
@@ -300,6 +409,8 @@ class _UserManagementViewState extends State<UserManagementView>
                         children: [
                           _buildRoleChip(user.role),
                           const SizedBox(width: 8),
+                          _buildApprovalStatusChip(user.approvalStatus),
+                          const SizedBox(width: 8),
                           Flexible(
                             child: Text(
                               'Joined ${_formatDate(user.createdAt)}',
@@ -323,6 +434,38 @@ class _UserManagementViewState extends State<UserManagementView>
                   onSelected: (action) =>
                       _handleUserAction(action, user, controller),
                   itemBuilder: (context) => [
+                    // Approval actions (only for pending users)
+                    if (user.approvalStatus == 'pending_approval') ...[
+                      PopupMenuItem(
+                        value: 'approve',
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.check_circle,
+                              size: 20,
+                              color: Colors.green,
+                            ),
+                            const SizedBox(width: 8),
+                            Text('approve'.tr),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'reject',
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.cancel,
+                              size: 20,
+                              color: Colors.red,
+                            ),
+                            const SizedBox(width: 8),
+                            Text('reject'.tr),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                    ],
                     PopupMenuItem(
                       value: 'edit',
                       child: Row(
@@ -382,6 +525,185 @@ class _UserManagementViewState extends State<UserManagementView>
     );
   }
 
+  Widget _buildPendingUserCard(UserModel user, AdminController controller) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.orange.withValues(alpha: 0.3),
+          width: 2,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                // User Avatar
+                CircleAvatar(
+                  radius: 30,
+                  backgroundColor: _getRoleColor(
+                    user.role,
+                  ).withValues(alpha: 0.2),
+                  child: user.profileImage != null
+                      ? ClipOval(
+                          child: Image.network(
+                            user.profileImage!,
+                            width: 60,
+                            height: 60,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Icon(
+                              _getRoleIcon(user.role),
+                              color: _getRoleColor(user.role),
+                              size: 30,
+                            ),
+                          ),
+                        )
+                      : Icon(
+                          _getRoleIcon(user.role),
+                          color: _getRoleColor(user.role),
+                          size: 30,
+                        ),
+                ),
+                const SizedBox(width: 16),
+
+                // User Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              user.name,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: AppTheme.textColor,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              'PENDING',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        user.email,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppTheme.textColor.withValues(alpha: 0.7),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _buildRoleChip(user.role),
+                          const SizedBox(width: 12),
+                          Icon(
+                            Icons.access_time,
+                            size: 14,
+                            color: AppTheme.textColor.withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _formatDate(user.createdAt),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textColor.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Action Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _approveUser(user, controller),
+                    icon: const Icon(Icons.check_circle, size: 18),
+                    label: Text('approve'.tr),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _rejectUser(user, controller),
+                    icon: const Icon(Icons.cancel, size: 18),
+                    label: Text('reject'.tr),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final difference = now.difference(date);
+
+    if (difference.inDays > 0) {
+      return '${difference.inDays}d ago';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}h ago';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
+  }
+
   Widget _buildStatusChip(bool isActive) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -410,11 +732,50 @@ class _UserManagementViewState extends State<UserManagementView>
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        role.name.toUpperCase(),
+        role.toString().split('.').last.toUpperCase(),
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w600,
           color: _getRoleColor(role),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildApprovalStatusChip(String approvalStatus) {
+    Color color;
+    String text;
+
+    switch (approvalStatus) {
+      case 'pending_approval':
+        color = Colors.orange;
+        text = 'PENDING';
+        break;
+      case 'approved':
+        color = Colors.green;
+        text = 'APPROVED';
+        break;
+      case 'rejected':
+        color = Colors.red;
+        text = 'REJECTED';
+        break;
+      default:
+        color = Colors.grey;
+        text = 'UNKNOWN';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color,
         ),
       ),
     );
@@ -442,19 +803,50 @@ class _UserManagementViewState extends State<UserManagementView>
     }
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date).inDays;
+  void _approveUser(UserModel user, AdminController controller) {
+    Get.dialog(
+      AlertDialog(
+        title: Text('approve_user'.tr),
+        content: Text('Are you sure you want to approve ${user.name}?'),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              controller.approveUser(user.id);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('approve'.tr),
+          ),
+        ],
+      ),
+    );
+  }
 
-    if (difference == 0) {
-      return 'today';
-    } else if (difference == 1) {
-      return 'yesterday';
-    } else if (difference < 30) {
-      return '$difference days ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
+  void _rejectUser(UserModel user, AdminController controller) {
+    Get.dialog(
+      AlertDialog(
+        title: Text('reject_user'.tr),
+        content: Text('Are you sure you want to reject ${user.name}?'),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              controller.rejectUser(user.id);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: Text('reject'.tr),
+          ),
+        ],
+      ),
+    );
   }
 
   void _handleUserAction(
@@ -463,6 +855,12 @@ class _UserManagementViewState extends State<UserManagementView>
     AdminController controller,
   ) {
     switch (action) {
+      case 'approve':
+        _approveUser(user, controller);
+        break;
+      case 'reject':
+        _rejectUser(user, controller);
+        break;
       case 'edit':
         _showEditUserDialog(user);
         break;
@@ -499,11 +897,27 @@ class _UserManagementViewState extends State<UserManagementView>
 
   void _toggleUserStatus(UserModel user, AdminController controller) {
     final newStatus = !user.isActive;
-    // Mock implementation
-    Get.snackbar(
-      'success'.tr,
-      'User ${user.name} has been ${newStatus ? "activated" : "deactivated"}',
-      snackPosition: SnackPosition.BOTTOM,
+    final action = newStatus ? 'activate' : 'deactivate';
+
+    Get.dialog(
+      AlertDialog(
+        title: Text('${action}_user'.tr),
+        content: Text('Are you sure you want to $action ${user.name}?'),
+        actions: [
+          TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              controller.toggleUserActiveStatus(user.id, newStatus);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: newStatus ? Colors.green : Colors.orange,
+              foregroundColor: Colors.white,
+            ),
+            child: Text(action.tr),
+          ),
+        ],
+      ),
     );
   }
 
@@ -525,17 +939,15 @@ class _UserManagementViewState extends State<UserManagementView>
         ),
         actions: [
           TextButton(onPressed: () => Get.back(), child: Text('cancel'.tr)),
-          TextButton(
+          ElevatedButton(
             onPressed: () {
-              // Mock implementation
               Get.back();
-              Get.snackbar(
-                'success'.tr,
-                'User ${user.name} has been deleted',
-                snackPosition: SnackPosition.BOTTOM,
-              );
+              controller.deleteUser(user.id);
             },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
             child: Text('delete'.tr),
           ),
         ],

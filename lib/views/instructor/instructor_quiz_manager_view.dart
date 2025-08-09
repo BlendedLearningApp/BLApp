@@ -5,6 +5,9 @@ import '../../controllers/instructor_controller.dart';
 import '../../models/quiz_model.dart';
 import '../../models/course_model.dart';
 import '../../widgets/instructor/course_selector_widget.dart';
+import 'create_quiz_view.dart';
+import 'edit_quiz_view.dart';
+import 'quiz_results_view.dart';
 
 class InstructorQuizManagerView extends StatefulWidget {
   const InstructorQuizManagerView({super.key});
@@ -40,130 +43,131 @@ class _InstructorQuizManagerViewState extends State<InstructorQuizManagerView>
 
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      body: Column(
-        children: [
-          // Header Section
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppTheme.primaryColor,
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(20),
-                bottomRight: Radius.circular(20),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header Section
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryColor,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(20),
+                  bottomRight: Radius.circular(20),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.quiz,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'quiz_manager'.tr,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              'manage_your_quizzes'.tr,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white.withValues(alpha: 0.9),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => _showCreateQuizDialog(),
+                        icon: const Icon(Icons.add, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Search Bar
+                  TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'search_quizzes'.tr,
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value.toLowerCase();
+                      });
+                    },
+                  ),
+                ],
               ),
             ),
-            child: Column(
-              children: [
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.quiz,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'quiz_manager'.tr,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                          Text(
-                            'manage_your_quizzes'.tr,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.white.withValues(alpha: 0.9),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => _showCreateQuizDialog(),
-                      icon: const Icon(Icons.add, color: Colors.white),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                // Search Bar
-                TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'search_quizzes'.tr,
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value.toLowerCase();
-                    });
-                  },
-                ),
-              ],
-            ),
-          ),
 
-          // Course Selection
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: CourseSelectorWidget(
-              title: 'select_course_for_quizzes'.tr,
-              emptyMessage: 'create_course_first_to_add_quizzes'.tr,
-              onCourseSelected: () {
-                setState(() {
-                  // Refresh the quiz list when course is selected
-                });
-              },
+            // Course Selection
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: CourseSelectorWidget(
+                title: 'select_course_for_quizzes'.tr,
+                emptyMessage: 'create_course_first_to_add_quizzes'.tr,
+                onCourseSelected: () {
+                  setState(() {
+                    // Refresh the quiz list when course is selected
+                  });
+                },
+              ),
             ),
-          ),
 
-          // Tab Bar
-          Container(
-            color: Colors.white,
-            child: TabBar(
-              controller: _tabController,
-              labelColor: AppTheme.primaryColor,
-              unselectedLabelColor: Colors.grey[600],
-              indicatorColor: AppTheme.primaryColor,
-              tabs: [
-                Tab(text: 'all_quizzes'.tr),
-                Tab(text: 'published'.tr),
-                Tab(text: 'drafts'.tr),
-              ],
+            // Tab Bar
+            Container(
+              color: Colors.white,
+              child: TabBar(
+                controller: _tabController,
+                labelColor: AppTheme.primaryColor,
+                unselectedLabelColor: Colors.grey[600],
+                indicatorColor: AppTheme.primaryColor,
+                tabs: [
+                  Tab(text: 'all_quizzes'.tr),
+                  Tab(text: 'published'.tr),
+                  Tab(text: 'drafts'.tr),
+                ],
+              ),
             ),
-          ),
 
-          // Quiz List
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildQuizList(instructorController, 'all'),
-                _buildQuizList(instructorController, 'published'),
-                _buildQuizList(instructorController, 'drafts'),
-              ],
+            // Quiz List
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildQuizList(instructorController, 'all'),
+                  _buildQuizList(instructorController, 'published'),
+                  _buildQuizList(instructorController, 'drafts'),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -504,26 +508,73 @@ class _InstructorQuizManagerViewState extends State<InstructorQuizManagerView>
   }
 
   void _showCreateQuizDialog() {
-    Get.snackbar(
-      'info'.tr,
-      'create_quiz_coming_soon'.tr,
-      snackPosition: SnackPosition.BOTTOM,
-    );
+    print('📝 _showCreateQuizDialog() called');
+    final instructorController = Get.find<InstructorController>();
+    final selectedCourse = instructorController.currentCourse;
+
+    print('📚 Current course check:');
+    print('   Selected course: ${selectedCourse?.title ?? "NULL"}');
+    print('   Course ID: ${selectedCourse?.id ?? "NULL"}');
+
+    if (selectedCourse == null) {
+      print('❌ No course selected - showing error message');
+      Get.snackbar(
+        'error'.tr,
+        'please_select_course_first'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    print('✅ Course selected, opening create quiz screen...');
+    Get.to(() => CreateQuizView(course: selectedCourse));
   }
 
   void _editQuiz(QuizModel quiz) {
-    Get.snackbar(
-      'info'.tr,
-      'edit_quiz_coming_soon'.tr,
-      snackPosition: SnackPosition.BOTTOM,
-    );
+    print('📝 _editQuiz() called for quiz: ${quiz.title}');
+    print('📊 Quiz ID: ${quiz.id}');
+
+    final instructorController = Get.find<InstructorController>();
+    final selectedCourse = instructorController.currentCourse;
+
+    if (selectedCourse == null) {
+      print('❌ No course selected for editing quiz');
+      Get.snackbar(
+        'error'.tr,
+        'please_select_course_first'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    print('✅ Course selected, opening edit quiz screen...');
+    Get.to(() => EditQuizView(quiz: quiz, course: selectedCourse));
   }
 
   void _viewQuizResults(QuizModel quiz) {
-    Get.snackbar(
-      'info'.tr,
-      'quiz_results_coming_soon'.tr,
-      snackPosition: SnackPosition.BOTTOM,
-    );
+    print('📊 _viewQuizResults() called for quiz: ${quiz.title}');
+    print('📊 Quiz ID: ${quiz.id}');
+
+    final instructorController = Get.find<InstructorController>();
+    final selectedCourse = instructorController.currentCourse;
+
+    if (selectedCourse == null) {
+      print('❌ No course selected for viewing quiz results');
+      Get.snackbar(
+        'error'.tr,
+        'please_select_course_first'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
+
+    print('✅ Course selected, opening quiz results screen...');
+    Get.to(() => QuizResultsView(quiz: quiz, course: selectedCourse));
   }
 }

@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 import '../../config/app_theme.dart';
 import '../../controllers/student_controller.dart';
 import '../../models/course_model.dart';
 import '../../models/video_model.dart';
+import '../../models/quiz_model.dart';
 import '../../widgets/common/custom_card.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/empty_state_widget.dart';
-import '../../utils/youtube_utils.dart';
+import '../../widgets/student/video_player_widget.dart';
+import '../../routes/app_routes.dart';
+import '../../services/supabase_service.dart';
 
 class CourseDetailView extends StatefulWidget {
   const CourseDetailView({super.key});
@@ -19,89 +22,166 @@ class CourseDetailView extends StatefulWidget {
 
 class _CourseDetailViewState extends State<CourseDetailView> {
   final StudentController controller = Get.find<StudentController>();
-  WebViewController? _webViewController;
   CourseModel? currentCourse;
   int selectedVideoIndex = 0;
 
   // Video progress tracking
   Map<String, double> videoProgress = {};
   Map<String, bool> videoCompleted = {};
-  bool isVideoPlaying = false;
-  bool _isVideoPlayerReady = false;
-  Duration currentPosition = Duration.zero;
-  Duration videoDuration = Duration.zero;
 
   // Worksheet tracking
   Map<String, bool> worksheetDownloaded = {};
   Map<String, bool> worksheetCompleted = {};
 
+  // Quiz tracking
+  Map<String, bool> quizCompleted = {};
+  Map<String, int> quizScores = {};
+
+  // Loading state
+  bool isLoading = true;
+
   @override
   void initState() {
     super.initState();
-    // Get course from arguments or use first enrolled course
-    final courseId = Get.arguments as String?;
-    currentCourse = courseId != null
-        ? controller.enrolledCourses.firstWhere((c) => c.id == courseId)
-        : controller.enrolledCourses.isNotEmpty
-        ? controller.enrolledCourses.first
-        : null;
+    // Use post-frame callback to prevent setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadCourseData();
+    });
+  }
 
-    if (currentCourse?.videos.isNotEmpty == true) {
-      _initializeWebViewPlayer(currentCourse!.videos.first);
+  Future<void> _loadCourseData() async {
+    try {
+      setState(() {
+        isLoading = true;
+      });
+
+      final courseId = Get.arguments as String?;
+
+      if (courseId == null) {
+        // No course ID provided, use first enrolled course if available
+        await controller.loadStudentData();
+
+        if (controller.enrolledCourses.isNotEmpty) {
+          setState(() {
+            currentCourse = controller.enrolledCourses.first;
+            isLoading = false;
+          });
+
+          // Debug: Log course and video information
+          print('🎓 Course loaded: ${currentCourse?.title}');
+          print('🎥 Videos count: ${currentCourse?.videos.length ?? 0}');
+          if (currentCourse?.videos.isNotEmpty == true) {
+            print('🎥 First video: ${currentCourse!.videos.first.title}');
+            print(
+              '🎥 First video URL: ${currentCourse!.videos.first.youtubeUrl}',
+            );
+            print(
+              '🎥 First video ID: ${currentCourse!.videos.first.youtubeVideoId}',
+            );
+          }
+
+          // Set initial video index if course has videos
+          if (currentCourse?.videos.isNotEmpty == true) {
+            selectedVideoIndex = 0;
+          }
+        } else {
+          setState(() {
+            isLoading = false;
+          });
+        }
+      } else {
+        // Ensure enrolled courses are loaded
+        await controller.loadStudentData();
+        print(
+          '📚 Total enrolled courses: ${controller.enrolledCourses.length}',
+        );
+        print('🔍 Looking for course ID: $courseId');
+
+        // Try to find the course in enrolled courses
+        try {
+          final course = controller.enrolledCourses.firstWhere(
+            (c) => c.id == courseId,
+          );
+          setState(() {
+            currentCourse = course;
+            isLoading = false;
+          });
+
+          // Debug: Log course and video information
+          print('🎓 Course loaded by ID: ${currentCourse?.title}');
+          print('🎥 Videos count: ${currentCourse?.videos.length ?? 0}');
+          if (currentCourse?.videos.isNotEmpty == true) {
+            print('🎥 First video: ${currentCourse!.videos.first.title}');
+            print(
+              '🎥 First video URL: ${currentCourse!.videos.first.youtubeUrl}',
+            );
+            print(
+              '🎥 First video ID: ${currentCourse!.videos.first.youtubeVideoId}',
+            );
+          }
+
+          // Set initial video index if course has videos
+          if (currentCourse?.videos.isNotEmpty == true) {
+            selectedVideoIndex = 0;
+          }
+        } catch (e) {
+          // Course not found in enrolled courses, try fetching from database
+          print(
+            '⚠️ Course $courseId not found in enrolled courses, trying database...',
+          );
+
+          try {
+            final course = await SupabaseService.getCourseById(courseId);
+            setState(() {
+              currentCourse = course;
+              isLoading = false;
+            });
+
+            // Debug: Log course and video information
+            print('🎓 Course loaded from database: ${currentCourse?.title}');
+            print('🎥 Videos count: ${currentCourse?.videos.length ?? 0}');
+            if (currentCourse?.videos.isNotEmpty == true) {
+              print('🎥 First video: ${currentCourse!.videos.first.title}');
+              print(
+                '🎥 First video URL: ${currentCourse!.videos.first.youtubeUrl}',
+              );
+              print(
+                '🎥 First video ID: ${currentCourse!.videos.first.youtubeVideoId}',
+              );
+            }
+
+            // Set initial video index if course has videos
+            if (currentCourse?.videos.isNotEmpty == true) {
+              selectedVideoIndex = 0;
+            }
+          } catch (dbError) {
+            print('❌ Failed to load course from database: $dbError');
+            Get.offNamed('/student/course-preview', arguments: courseId);
+          }
+        }
+      }
+    } catch (e) {
+      setState(() {
+        isLoading = false;
+      });
+      print('❌ Error loading course data: $e');
     }
   }
 
-  void _initializeWebViewPlayer(VideoModel video) {
-    // Validate video ID
-    if (!video.hasValidVideoId) {
-      Get.snackbar(
-        'error'.tr,
-        'invalid_video_id'.tr,
-        snackPosition: SnackPosition.BOTTOM,
+  void _selectVideo(int index) {
+    if (currentCourse != null && index < currentCourse!.videos.length) {
+      print('🎥 Selecting video $index: ${currentCourse!.videos[index].title}');
+      setState(() {
+        selectedVideoIndex = index;
+      });
+      print(
+        '✅ Video selection updated. New selectedVideoIndex: $selectedVideoIndex',
       );
-      return;
+    } else {
+      print(
+        '❌ Cannot select video $index. Course: ${currentCourse != null}, Videos count: ${currentCourse?.videos.length ?? 0}',
+      );
     }
-
-    final videoId = video.bestVideoId;
-    final embedUrl =
-        'https://www.youtube.com/embed/$videoId?autoplay=0&controls=1&rel=0&showinfo=0&modestbranding=1';
-
-    _webViewController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setUserAgent(
-        'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36',
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (String url) {
-            setState(() {
-              isVideoPlaying = false;
-            });
-          },
-          onPageFinished: (String url) {
-            setState(() {
-              _isVideoPlayerReady = true;
-            });
-          },
-          onWebResourceError: (WebResourceError error) {
-            Get.snackbar(
-              'error'.tr,
-              'failed_to_load_video'.tr,
-              snackPosition: SnackPosition.BOTTOM,
-            );
-          },
-          onNavigationRequest: (NavigationRequest request) {
-            // Allow YouTube domains
-            if (request.url.contains('youtube.com') ||
-                request.url.contains('youtu.be') ||
-                request.url.contains('googlevideo.com')) {
-              return NavigationDecision.navigate;
-            }
-            return NavigationDecision.prevent;
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(embedUrl));
   }
 
   // Simplified video state tracking for WebView
@@ -144,95 +224,336 @@ class _CourseDetailViewState extends State<CourseDetailView> {
   Widget _buildVideoItem(VideoModel video, int index) {
     final isSelected = index == selectedVideoIndex;
     final isCompleted = videoCompleted[video.id] ?? false;
+    final watchProgress = videoProgress[video.id] ?? 0.0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: isSelected
             ? AppTheme.primaryColor.withValues(alpha: 0.1)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+            : Colors.white,
+        borderRadius: BorderRadius.circular(12),
         border: isSelected
             ? Border.all(color: AppTheme.primaryColor, width: 2)
+            : Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.1)),
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.2),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
             : null,
       ),
-      child: ListTile(
-        leading: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: isCompleted
-                ? AppTheme.accentColor
-                : AppTheme.primaryColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Stack(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: isCompleted
+                        ? AppTheme.accentColor
+                        : AppTheme.primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    isCompleted
+                        ? Icons.check_circle
+                        : isSelected
+                        ? Icons.pause_circle
+                        : Icons.play_circle,
+                    color: isCompleted ? Colors.white : AppTheme.primaryColor,
+                    size: 24,
+                  ),
+                ),
+                if (!isCompleted && watchProgress > 0) ...[
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: AppTheme.warningColor,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.schedule,
+                        color: Colors.white,
+                        size: 8,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            title: Text(
+              video.title,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? AppTheme.primaryColor : AppTheme.textColor,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.access_time,
+                      size: 12,
+                      color: AppTheme.textColor.withValues(alpha: 0.6),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatDuration(video.durationSeconds),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppTheme.textColor.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    if (isCompleted) ...[
+                      const SizedBox(width: 12),
+                      Icon(
+                        Icons.check_circle,
+                        size: 12,
+                        color: AppTheme.accentColor,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'completed'.tr,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.accentColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ] else if (watchProgress > 0) ...[
+                      const SizedBox(width: 12),
+                      Text(
+                        '${(watchProgress * 100).toInt()}% ${'watched'.tr}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.warningColor,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+            trailing: isSelected
+                ? Icon(
+                    Icons.play_circle_filled,
+                    color: AppTheme.primaryColor,
+                    size: 24,
+                  )
+                : Icon(Icons.play_circle_outline, color: Colors.grey, size: 20),
+            onTap: () {
+              _selectVideo(index);
+              // Provide haptic feedback
+              HapticFeedback.lightImpact();
+            },
           ),
-          child: Icon(
-            isCompleted ? Icons.check : Icons.play_arrow,
-            color: isCompleted ? Colors.white : AppTheme.primaryColor,
-            size: 20,
-          ),
-        ),
-        title: Text(
-          video.title,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            color: isSelected ? AppTheme.primaryColor : AppTheme.textColor,
-          ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          _formatDuration(video.durationSeconds),
-          style: TextStyle(
-            fontSize: 12,
-            color: AppTheme.textColor.withValues(alpha: 0.6),
-          ),
-        ),
-        onTap: () {
-          setState(() {
-            selectedVideoIndex = index;
-          });
-          _initializeWebViewPlayer(video);
-        },
+
+          // Progress bar for partially watched videos
+          if (!isCompleted && watchProgress > 0) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: LinearProgressIndicator(
+                value: watchProgress,
+                backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.1),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  AppTheme.warningColor,
+                ),
+                minHeight: 3,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
-  Widget _buildQuizItem(quiz) {
-    return Container(
+  Widget _buildQuizItem(QuizModel quiz) {
+    final isCompleted = quizCompleted[quiz.id] ?? false;
+    final score = quizScores[quiz.id];
+
+    return CustomCard(
       margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: AppTheme.accentColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Icon(Icons.quiz, color: AppTheme.accentColor, size: 20),
-        ),
-        title: Text(
-          quiz.title,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: AppTheme.textColor,
-          ),
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: Text(
-          '${quiz.questions.length} ${'questions'.tr} • ${quiz.timeLimit} ${'minutes'.tr}',
-          style: TextStyle(
-            fontSize: 12,
-            color: AppTheme.textColor.withValues(alpha: 0.6),
-          ),
-        ),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+      child: InkWell(
         onTap: () {
-          Get.toNamed('/quiz', arguments: quiz.id);
+          Get.toNamed(AppRoutes.quiz, arguments: quiz.id);
         },
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isCompleted
+                          ? Colors.green.withValues(alpha: 0.1)
+                          : AppTheme.accentColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      isCompleted ? Icons.quiz : Icons.quiz_outlined,
+                      color: isCompleted ? Colors.green : AppTheme.accentColor,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          quiz.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
+                        if (quiz.description.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            quiz.description,
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (isCompleted && score != null) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: score >= quiz.passingScore
+                            ? Colors.green
+                            : Colors.orange,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '$score%',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Quiz metadata - Responsive layout
+              Wrap(
+                spacing: 16,
+                runSpacing: 8,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.timer_outlined,
+                        size: 16,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${quiz.timeLimit} ${'minutes'.tr}',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.help_outline,
+                        size: 16,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${quiz.questions.length} ${'questions'.tr}',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.percent, size: 16, color: Colors.grey[600]),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${'passing_score'.tr}: ${quiz.passingScore}%',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(
+                    isCompleted
+                        ? Icons.check_circle
+                        : Icons.play_circle_outline,
+                    size: 16,
+                    color: isCompleted ? Colors.green : AppTheme.primaryColor,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    isCompleted ? 'completed'.tr : 'start_quiz'.tr,
+                    style: TextStyle(
+                      color: isCompleted ? Colors.green : AppTheme.primaryColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (isCompleted) ...[
+                    const Spacer(),
+                    Text(
+                      'retake_quiz'.tr,
+                      style: TextStyle(
+                        color: AppTheme.primaryColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -293,6 +614,157 @@ class _CourseDetailViewState extends State<CourseDetailView> {
     return completedVideos / currentCourse!.videos.length;
   }
 
+  Widget _buildProgressOverview() {
+    final totalVideos = currentCourse!.videos.length;
+    final completedVideos = currentCourse!.videos
+        .where((video) => videoCompleted[video.id] ?? false)
+        .length;
+
+    final totalQuizzes = currentCourse!.quizzes.length;
+    final completedQuizzes = currentCourse!.quizzes
+        .where((quiz) => quizCompleted[quiz.id] ?? false)
+        .length;
+
+    final totalWorksheets = currentCourse!.worksheets.length;
+    final completedWorksheets = currentCourse!.worksheets
+        .where((worksheet) => worksheetCompleted[worksheet.id] ?? false)
+        .length;
+
+    final overallProgress = _calculateOverallProgress();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Overall Progress
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'overall_progress'.tr,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
+            ),
+            Text(
+              '${(overallProgress * 100).toInt()}%',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        LinearProgressIndicator(
+          value: overallProgress,
+          backgroundColor: Colors.white.withValues(alpha: 0.3),
+          valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+          minHeight: 6,
+        ),
+        const SizedBox(height: 16),
+
+        // Progress Breakdown
+        Row(
+          children: [
+            Expanded(
+              child: _buildProgressItem(
+                icon: Icons.play_circle_outline,
+                label: 'videos'.tr,
+                completed: completedVideos,
+                total: totalVideos,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildProgressItem(
+                icon: Icons.quiz,
+                label: 'quizzes'.tr,
+                completed: completedQuizzes,
+                total: totalQuizzes,
+              ),
+            ),
+            if (totalWorksheets > 0) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildProgressItem(
+                  icon: Icons.description,
+                  label: 'resources'.tr,
+                  completed: completedWorksheets,
+                  total: totalWorksheets,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProgressItem({
+    required IconData icon,
+    required String label,
+    required int completed,
+    required int total,
+  }) {
+    final progress = total > 0 ? completed / total : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.white, size: 16),
+          const SizedBox(height: 4),
+          Text(
+            '$completed/$total',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.white.withValues(alpha: 0.8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _calculateOverallProgress() {
+    final totalItems =
+        currentCourse!.videos.length +
+        currentCourse!.quizzes.length +
+        currentCourse!.worksheets.length;
+
+    if (totalItems == 0) return 0.0;
+
+    final completedItems =
+        currentCourse!.videos
+            .where((video) => videoCompleted[video.id] ?? false)
+            .length +
+        currentCourse!.quizzes
+            .where((quiz) => quizCompleted[quiz.id] ?? false)
+            .length +
+        currentCourse!.worksheets
+            .where((worksheet) => worksheetCompleted[worksheet.id] ?? false)
+            .length;
+
+    return completedItems / totalItems;
+  }
+
   void _downloadResource(worksheet) {
     setState(() {
       worksheetDownloaded[worksheet.id] = true;
@@ -324,19 +796,13 @@ class _CourseDetailViewState extends State<CourseDetailView> {
 
   void _playNextVideo() {
     if (selectedVideoIndex < currentCourse!.videos.length - 1) {
-      setState(() {
-        selectedVideoIndex++;
-      });
-      _initializeWebViewPlayer(currentCourse!.videos[selectedVideoIndex]);
+      _selectVideo(selectedVideoIndex + 1);
     }
   }
 
   void _playPreviousVideo() {
     if (selectedVideoIndex > 0) {
-      setState(() {
-        selectedVideoIndex--;
-      });
-      _initializeWebViewPlayer(currentCourse!.videos[selectedVideoIndex]);
+      _selectVideo(selectedVideoIndex - 1);
     }
   }
 
@@ -348,6 +814,17 @@ class _CourseDetailViewState extends State<CourseDetailView> {
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text('course_detail'.tr),
+          backgroundColor: AppTheme.primaryColor,
+          foregroundColor: Colors.white,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (currentCourse == null) {
       return Scaffold(
         appBar: AppBar(
@@ -372,449 +849,415 @@ class _CourseDetailViewState extends State<CourseDetailView> {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      body: Row(
-        children: [
-          // Left Sidebar - Course Content
-          Container(
-            width: 350,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 10,
-                  offset: const Offset(2, 0),
-                ),
-              ],
-            ),
-            child: Column(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // Use responsive layout based on screen width
+          if (constraints.maxWidth < 800) {
+            // Mobile layout - single column
+            return _buildMobileLayout();
+          } else {
+            // Desktop layout - two columns
+            return Row(
               children: [
-                // Course Header
+                // Left Sidebar - Course Content
                 Container(
-                  padding: const EdgeInsets.all(20),
+                  width: 350,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [AppTheme.primaryColor, AppTheme.accentColor],
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        currentCourse!.title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${'by'.tr} ${currentCourse!.instructorName}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.white.withValues(alpha: 0.9),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Progress Bar
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'course_progress'.tr,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.8),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          LinearProgressIndicator(
-                            value: _calculateProgress(),
-                            backgroundColor: Colors.white.withValues(
-                              alpha: 0.3,
-                            ),
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${(_calculateProgress() * 100).toInt()}% ${'complete'.tr}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.8),
-                            ),
-                          ),
-                        ],
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(2, 0),
                       ),
                     ],
                   ),
-                ),
-
-                // Course Content List
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // Videos Section
-                      if (currentCourse!.videos.isNotEmpty) ...[
-                        _buildSectionHeader(
-                          'course_videos'.tr,
-                          Icons.play_circle_outline,
-                        ),
-                        const SizedBox(height: 8),
-                        ...currentCourse!.videos.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final video = entry.value;
-                          return _buildVideoItem(video, index);
-                        }).toList(),
-                        const SizedBox(height: 24),
-                      ],
-
-                      // Quizzes Section
-                      if (currentCourse!.quizzes.isNotEmpty) ...[
-                        _buildSectionHeader('course_quizzes'.tr, Icons.quiz),
-                        const SizedBox(height: 8),
-                        ...currentCourse!.quizzes
-                            .map((quiz) => _buildQuizItem(quiz))
-                            .toList(),
-                        const SizedBox(height: 24),
-                      ],
-
-                      // Worksheets Section
-                      if (currentCourse!.worksheets.isNotEmpty) ...[
-                        _buildSectionHeader(
-                          'course_resources'.tr,
-                          Icons.description,
-                        ),
-                        const SizedBox(height: 8),
-                        ...currentCourse!.worksheets
-                            .map((worksheet) => _buildResourceItem(worksheet))
-                            .toList(),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Main Content Area
-          Expanded(
-            child: Column(
-              children: [
-                // Video Player Section
-                if (currentCourse!.videos.isNotEmpty &&
-                    _webViewController != null) ...[
-                  Container(
-                    height: 250,
-                    color: Colors.black,
-                    child: WebViewWidget(controller: _webViewController!),
-                  ),
-
-                  // Video Controls and Info
-                  Container(
-                    color: Colors.black87,
-                    padding: const EdgeInsets.all(16),
+                  child: SingleChildScrollView(
                     child: Column(
                       children: [
-                        // Video Title and Status
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    currentCourse!
-                                        .videos[selectedVideoIndex]
-                                        .title,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '${_formatDuration(currentPosition.inSeconds)} / ${_formatDuration(videoDuration.inSeconds)}',
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.7,
-                                      ),
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                        // Course Header with Progress
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                AppTheme.primaryColor,
+                                AppTheme.accentColor,
+                              ],
                             ),
-                            if (videoCompleted[currentCourse!
-                                    .videos[selectedVideoIndex]
-                                    .id] ==
-                                true)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                currentCourse!.title,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.accentColor,
-                                  borderRadius: BorderRadius.circular(12),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '${'by'.tr} ${currentCourse!.instructorName}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white.withValues(alpha: 0.9),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
+                              ),
+                              const SizedBox(height: 16),
+                              // Enhanced Progress Section
+                              _buildProgressOverview(),
+                            ],
+                          ),
+                        ),
+
+                        // Course Content List
+                        Expanded(
+                          child: ListView(
+                            padding: const EdgeInsets.all(16),
+                            children: [
+                              // Videos Section
+                              if (currentCourse!.videos.isNotEmpty) ...[
+                                _buildSectionHeader(
+                                  'course_videos'.tr,
+                                  Icons.play_circle_outline,
+                                ),
+                                const SizedBox(height: 8),
+                                ...currentCourse!.videos.asMap().entries.map((
+                                  entry,
+                                ) {
+                                  final index = entry.key;
+                                  final video = entry.value;
+                                  return _buildVideoItem(video, index);
+                                }).toList(),
+                                const SizedBox(height: 24),
+                              ],
+
+                              // Quizzes Section
+                              if (currentCourse!.quizzes.isNotEmpty) ...[
+                                _buildSectionHeader(
+                                  'course_quizzes'.tr,
+                                  Icons.quiz,
+                                ),
+                                const SizedBox(height: 8),
+                                ...currentCourse!.quizzes
+                                    .map((quiz) => _buildQuizItem(quiz))
+                                    .toList(),
+                                const SizedBox(height: 24),
+                              ],
+
+                              // Worksheets Section
+                              if (currentCourse!.worksheets.isNotEmpty) ...[
+                                _buildSectionHeader(
+                                  'course_resources'.tr,
+                                  Icons.description,
+                                ),
+                                const SizedBox(height: 8),
+                                ...currentCourse!.worksheets
+                                    .map(
+                                      (worksheet) =>
+                                          _buildResourceItem(worksheet),
+                                    )
+                                    .toList(),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Main Content Area
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        // Video Player Section
+                        // Debug: Check video player condition
+                        Builder(
+                          builder: (context) {
+                            print('🔍 VideoPlayer condition check:');
+                            print(
+                              '   currentCourse != null: ${currentCourse != null}',
+                            );
+                            print(
+                              '   videos.isNotEmpty: ${currentCourse?.videos.isNotEmpty}',
+                            );
+                            print(
+                              '   videos.length: ${currentCourse?.videos.length}',
+                            );
+                            print('   selectedVideoIndex: $selectedVideoIndex');
+                            print(
+                              '   condition result: ${currentCourse!.videos.isNotEmpty && selectedVideoIndex < currentCourse!.videos.length}',
+                            );
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                        if (currentCourse!.videos.isNotEmpty &&
+                            selectedVideoIndex <
+                                currentCourse!.videos.length) ...[
+                          Container(
+                            height: 250,
+                            padding: const EdgeInsets.all(16),
+                            child: VideoPlayerWidget(
+                              key: ValueKey(
+                                'video_${currentCourse!.videos[selectedVideoIndex].id}',
+                              ),
+                              video: currentCourse!.videos[selectedVideoIndex],
+                              onVideoCompleted: () {
+                                // Mark video as completed
+                                setState(() {
+                                  videoCompleted[currentCourse!
+                                          .videos[selectedVideoIndex]
+                                          .id] =
+                                      true;
+                                });
+                              },
+                              onProgressUpdate: (watchTime) {
+                                // Update video progress
+                                // This could be used to track watch time
+                              },
+                            ),
+                          ),
+
+                          // Video Controls and Info
+                          Container(
+                            color: Colors.black87,
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              children: [
+                                // Video Title and Status
+                                Row(
                                   children: [
-                                    const Icon(
-                                      Icons.check,
-                                      color: Colors.white,
-                                      size: 14,
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            currentCourse!
+                                                .videos[selectedVideoIndex]
+                                                .title,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'video_duration_placeholder'.tr,
+                                            style: TextStyle(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.7,
+                                              ),
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      'completed'.tr,
-                                      style: const TextStyle(
+                                    if (videoCompleted[currentCourse!
+                                            .videos[selectedVideoIndex]
+                                            .id] ==
+                                        true)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.accentColor,
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.check,
+                                              color: Colors.white,
+                                              size: 14,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'completed'.tr,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 12),
+
+                                // Video Navigation Controls
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    IconButton(
+                                      onPressed: selectedVideoIndex > 0
+                                          ? _playPreviousVideo
+                                          : null,
+                                      icon: Icon(
+                                        Icons.skip_previous,
+                                        color: selectedVideoIndex > 0
+                                            ? Colors.white
+                                            : Colors.grey,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      onPressed: () {
+                                        // WebView doesn't support programmatic play/pause
+                                        Get.snackbar(
+                                          'info'.tr,
+                                          'use_video_controls'.tr,
+                                          snackPosition: SnackPosition.BOTTOM,
+                                        );
+                                      },
+                                      icon: const Icon(
+                                        Icons.play_circle_filled,
                                         color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w600,
+                                        size: 32,
+                                      ),
+                                    ),
+                                    IconButton(
+                                      onPressed:
+                                          selectedVideoIndex <
+                                              currentCourse!.videos.length - 1
+                                          ? _playNextVideo
+                                          : null,
+                                      icon: Icon(
+                                        Icons.skip_next,
+                                        color:
+                                            selectedVideoIndex <
+                                                currentCourse!.videos.length - 1
+                                            ? Colors.white
+                                            : Colors.grey,
                                       ),
                                     ),
                                   ],
                                 ),
-                              ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // Video Navigation Controls
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            IconButton(
-                              onPressed: selectedVideoIndex > 0
-                                  ? _playPreviousVideo
-                                  : null,
-                              icon: Icon(
-                                Icons.skip_previous,
-                                color: selectedVideoIndex > 0
-                                    ? Colors.white
-                                    : Colors.grey,
-                              ),
+                              ],
                             ),
-                            IconButton(
-                              onPressed: () {
-                                // WebView doesn't support programmatic play/pause
-                                Get.snackbar(
-                                  'info'.tr,
-                                  'use_video_controls'.tr,
-                                  snackPosition: SnackPosition.BOTTOM,
-                                );
-                              },
-                              icon: Icon(
-                                isVideoPlaying
-                                    ? Icons.pause_circle_filled
-                                    : Icons.play_circle_filled,
-                                color: Colors.white,
-                                size: 32,
-                              ),
-                            ),
-                            IconButton(
-                              onPressed:
-                                  selectedVideoIndex <
-                                      currentCourse!.videos.length - 1
-                                  ? _playNextVideo
-                                  : null,
-                              icon: Icon(
-                                Icons.skip_next,
-                                color:
-                                    selectedVideoIndex <
-                                        currentCourse!.videos.length - 1
-                                    ? Colors.white
-                                    : Colors.grey,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                          ),
+                        ],
 
-                // Course Info Section
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Course Title and Instructor
-                        Text(
-                          currentCourse!.title,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.textColor,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'by ${currentCourse!.instructorName}',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: AppTheme.textColor.withValues(alpha: 0.7),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Course Description
-                        Text(
-                          'description'.tr,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textColor,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          currentCourse!.description,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: AppTheme.textColor.withValues(alpha: 0.8),
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Videos List
-                        if (currentCourse!.videos.isNotEmpty)
-                          Column(
-                            children: [
-                              Text(
-                                'course_videos'.tr,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.textColor,
+                        // Course Info Section
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Course Title and Instructor
+                                Text(
+                                  currentCourse!.title,
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.textColor,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 12),
-                              ListView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: currentCourse!.videos.length,
-                                itemBuilder: (context, index) {
-                                  final video = currentCourse!.videos[index];
-                                  final isSelected =
-                                      index == selectedVideoIndex;
-                                  final isCompleted =
-                                      videoCompleted[video.id] == true;
-                                  final progress =
-                                      videoProgress[video.id] ?? 0.0;
+                                const SizedBox(height: 8),
+                                Text(
+                                  'by ${currentCourse!.instructorName}',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    color: AppTheme.textColor.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
 
-                                  return CustomCard(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    backgroundColor: isSelected
-                                        ? AppTheme.primaryColor.withValues(
-                                            alpha: 0.1,
-                                          )
-                                        : Colors.white,
-                                    onTap: () {
-                                      setState(() {
-                                        selectedVideoIndex = index;
-                                      });
-                                      _initializeWebViewPlayer(video);
-                                    },
-                                    child: Column(
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Stack(
-                                              children: [
-                                                Container(
-                                                  width: 60,
-                                                  height: 40,
-                                                  decoration: BoxDecoration(
-                                                    color: AppTheme.primaryColor
-                                                        .withValues(alpha: 0.1),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                  ),
-                                                  child: Icon(
-                                                    isSelected
-                                                        ? Icons
-                                                              .play_circle_filled
-                                                        : Icons
-                                                              .play_circle_outline,
-                                                    color:
-                                                        AppTheme.primaryColor,
-                                                  ),
-                                                ),
-                                                if (isCompleted)
-                                                  Positioned(
-                                                    top: -2,
-                                                    right: -2,
-                                                    child: Container(
-                                                      padding:
-                                                          const EdgeInsets.all(
-                                                            2,
-                                                          ),
-                                                      decoration:
-                                                          const BoxDecoration(
-                                                            color: AppTheme
-                                                                .accentColor,
-                                                            shape:
-                                                                BoxShape.circle,
-                                                          ),
-                                                      child: const Icon(
-                                                        Icons.check,
-                                                        color: Colors.white,
-                                                        size: 12,
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
+                                // Course Description
+                                Text(
+                                  'description'.tr,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.textColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  currentCourse!.description,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: AppTheme.textColor.withValues(
+                                      alpha: 0.8,
+                                    ),
+                                    height: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+
+                                // Videos List
+                                if (currentCourse!.videos.isNotEmpty)
+                                  Column(
+                                    children: [
+                                      Text(
+                                        'course_videos'.tr,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.textColor,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      ListView.builder(
+                                        shrinkWrap: true,
+                                        physics:
+                                            const NeverScrollableScrollPhysics(),
+                                        itemCount: currentCourse!.videos.length,
+                                        itemBuilder: (context, index) {
+                                          final video =
+                                              currentCourse!.videos[index];
+                                          final isSelected =
+                                              index == selectedVideoIndex;
+                                          final isCompleted =
+                                              videoCompleted[video.id] == true;
+                                          final progress =
+                                              videoProgress[video.id] ?? 0.0;
+
+                                          return CustomCard(
+                                            margin: const EdgeInsets.only(
+                                              bottom: 8,
                                             ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: Text(
-                                                          video.title,
-                                                          style: TextStyle(
-                                                            fontSize: 14,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            color: isSelected
-                                                                ? AppTheme
-                                                                      .primaryColor
-                                                                : AppTheme
-                                                                      .textColor,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      if (isCompleted)
+                                            backgroundColor: isSelected
+                                                ? AppTheme.primaryColor
+                                                      .withValues(alpha: 0.1)
+                                                : Colors.white,
+                                            onTap: () {
+                                              _selectVideo(index);
+                                              HapticFeedback.lightImpact();
+                                            },
+                                            child: Column(
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Stack(
+                                                      children: [
                                                         Container(
-                                                          padding:
-                                                              const EdgeInsets.symmetric(
-                                                                horizontal: 6,
-                                                                vertical: 2,
-                                                              ),
+                                                          width: 60,
+                                                          height: 40,
                                                           decoration: BoxDecoration(
                                                             color: AppTheme
-                                                                .accentColor
+                                                                .primaryColor
                                                                 .withValues(
                                                                   alpha: 0.1,
                                                                 ),
@@ -823,259 +1266,558 @@ class _CourseDetailViewState extends State<CourseDetailView> {
                                                                   8,
                                                                 ),
                                                           ),
-                                                          child: Text(
-                                                            'completed'.tr,
-                                                            style: const TextStyle(
-                                                              fontSize: 10,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w600,
-                                                              color: AppTheme
-                                                                  .accentColor,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                    ],
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    '${_formatDuration(video.durationSeconds)} • ${video.description}',
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      color: AppTheme.textColor
-                                                          .withValues(
-                                                            alpha: 0.6,
-                                                          ),
-                                                    ),
-                                                    maxLines: 2,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-
-                                        // Progress Bar
-                                        if (progress > 0)
-                                          Container(
-                                            margin: const EdgeInsets.only(
-                                              top: 8,
-                                            ),
-                                            child: Column(
-                                              children: [
-                                                Row(
-                                                  children: [
-                                                    Text(
-                                                      '${'progress'.tr}: ${(progress * 100).toInt()}%',
-                                                      style: TextStyle(
-                                                        fontSize: 10,
-                                                        color: AppTheme
-                                                            .textColor
-                                                            .withValues(
-                                                              alpha: 0.7,
-                                                            ),
-                                                      ),
-                                                    ),
-                                                    const Spacer(),
-                                                    if (progress > 0 &&
-                                                        !isCompleted)
-                                                      GestureDetector(
-                                                        onTap: () {
-                                                          setState(() {
-                                                            selectedVideoIndex =
-                                                                index;
-                                                          });
-                                                          _initializeWebViewPlayer(
-                                                            video,
-                                                          );
-                                                        },
-                                                        child: Text(
-                                                          'resume'.tr,
-                                                          style: const TextStyle(
-                                                            fontSize: 10,
+                                                          child: Icon(
+                                                            isSelected
+                                                                ? Icons
+                                                                      .play_circle_filled
+                                                                : Icons
+                                                                      .play_circle_outline,
                                                             color: AppTheme
                                                                 .primaryColor,
-                                                            fontWeight:
-                                                                FontWeight.w600,
                                                           ),
                                                         ),
+                                                        if (isCompleted)
+                                                          Positioned(
+                                                            top: -2,
+                                                            right: -2,
+                                                            child: Container(
+                                                              padding:
+                                                                  const EdgeInsets.all(
+                                                                    2,
+                                                                  ),
+                                                              decoration: const BoxDecoration(
+                                                                color: AppTheme
+                                                                    .accentColor,
+                                                                shape: BoxShape
+                                                                    .circle,
+                                                              ),
+                                                              child: const Icon(
+                                                                Icons.check,
+                                                                color: Colors
+                                                                    .white,
+                                                                size: 12,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                      ],
+                                                    ),
+                                                    const SizedBox(width: 12),
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                          Row(
+                                                            children: [
+                                                              Expanded(
+                                                                child: Text(
+                                                                  video.title,
+                                                                  style: TextStyle(
+                                                                    fontSize:
+                                                                        14,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w600,
+                                                                    color:
+                                                                        isSelected
+                                                                        ? AppTheme
+                                                                              .primaryColor
+                                                                        : AppTheme
+                                                                              .textColor,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              if (isCompleted)
+                                                                Container(
+                                                                  padding:
+                                                                      const EdgeInsets.symmetric(
+                                                                        horizontal:
+                                                                            6,
+                                                                        vertical:
+                                                                            2,
+                                                                      ),
+                                                                  decoration: BoxDecoration(
+                                                                    color: AppTheme
+                                                                        .accentColor
+                                                                        .withValues(
+                                                                          alpha:
+                                                                              0.1,
+                                                                        ),
+                                                                    borderRadius:
+                                                                        BorderRadius.circular(
+                                                                          8,
+                                                                        ),
+                                                                  ),
+                                                                  child: Text(
+                                                                    'completed'
+                                                                        .tr,
+                                                                    style: const TextStyle(
+                                                                      fontSize:
+                                                                          10,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w600,
+                                                                      color: AppTheme
+                                                                          .accentColor,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                            ],
+                                                          ),
+                                                          const SizedBox(
+                                                            height: 4,
+                                                          ),
+                                                          Text(
+                                                            '${_formatDuration(video.durationSeconds)} • ${video.description}',
+                                                            style: TextStyle(
+                                                              fontSize: 12,
+                                                              color: AppTheme
+                                                                  .textColor
+                                                                  .withValues(
+                                                                    alpha: 0.6,
+                                                                  ),
+                                                            ),
+                                                            maxLines: 2,
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                          ),
+                                                        ],
                                                       ),
+                                                    ),
                                                   ],
                                                 ),
-                                                const SizedBox(height: 4),
-                                                LinearProgressIndicator(
-                                                  value: progress,
-                                                  backgroundColor: Colors.grey
-                                                      .withValues(alpha: 0.3),
-                                                  valueColor:
-                                                      AlwaysStoppedAnimation<
-                                                        Color
-                                                      >(
-                                                        isCompleted
-                                                            ? AppTheme
-                                                                  .accentColor
-                                                            : AppTheme
-                                                                  .primaryColor,
+
+                                                // Progress Bar
+                                                if (progress > 0)
+                                                  Container(
+                                                    margin:
+                                                        const EdgeInsets.only(
+                                                          top: 8,
+                                                        ),
+                                                    child: Column(
+                                                      children: [
+                                                        Row(
+                                                          children: [
+                                                            Text(
+                                                              '${'progress'.tr}: ${(progress * 100).toInt()}%',
+                                                              style: TextStyle(
+                                                                fontSize: 10,
+                                                                color: AppTheme
+                                                                    .textColor
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.7,
+                                                                    ),
+                                                              ),
+                                                            ),
+                                                            const Spacer(),
+                                                            if (progress > 0 &&
+                                                                !isCompleted)
+                                                              GestureDetector(
+                                                                onTap: () {
+                                                                  _selectVideo(
+                                                                    index,
+                                                                  );
+                                                                  HapticFeedback.lightImpact();
+                                                                },
+                                                                child: Text(
+                                                                  'resume'.tr,
+                                                                  style: const TextStyle(
+                                                                    fontSize:
+                                                                        10,
+                                                                    color: AppTheme
+                                                                        .primaryColor,
+                                                                    fontWeight:
+                                                                        FontWeight
+                                                                            .w600,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                          ],
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 4,
+                                                        ),
+                                                        LinearProgressIndicator(
+                                                          value: progress,
+                                                          backgroundColor:
+                                                              Colors.grey
+                                                                  .withValues(
+                                                                    alpha: 0.3,
+                                                                  ),
+                                                          valueColor:
+                                                              AlwaysStoppedAnimation<
+                                                                Color
+                                                              >(
+                                                                isCompleted
+                                                                    ? AppTheme
+                                                                          .accentColor
+                                                                    : AppTheme
+                                                                          .primaryColor,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
+
+                                const SizedBox(height: 24),
+
+                                // Worksheets Section
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'worksheets'.tr,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppTheme.textColor,
+                                      ),
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: _showWorksheetUploadDialog,
+                                      icon: const Icon(Icons.add, size: 16),
+                                      label: Text('add_worksheet'.tr),
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: AppTheme.primaryColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                if (currentCourse!.worksheets.isNotEmpty)
+                                  ListView.builder(
+                                    shrinkWrap: true,
+                                    physics:
+                                        const NeverScrollableScrollPhysics(),
+                                    itemCount: currentCourse!.worksheets.length,
+                                    itemBuilder: (context, index) {
+                                      final worksheet =
+                                          currentCourse!.worksheets[index];
+                                      final isDownloaded =
+                                          worksheetDownloaded[worksheet.id] ??
+                                          false;
+                                      final isCompleted =
+                                          worksheetCompleted[worksheet.id] ??
+                                          false;
+
+                                      return CustomCard(
+                                        margin: const EdgeInsets.only(
+                                          bottom: 8,
+                                        ),
+                                        child: _buildEnhancedWorksheetItem(
+                                          worksheet,
+                                          isDownloaded,
+                                          isCompleted,
+                                        ),
+                                      );
+                                    },
+                                  )
+                                else
+                                  CustomCard(
+                                    child: EmptyStateWidget(
+                                      icon: Icons.description_outlined,
+                                      title: 'no_worksheets_available'.tr,
+                                      description:
+                                          'worksheets_will_be_added_by_instructor'
+                                              .tr,
+                                    ),
+                                  ),
+
+                                const SizedBox(height: 24),
+
+                                // Quizzes Section
+                                if (currentCourse!.quizzes.isNotEmpty)
+                                  Column(
+                                    children: [
+                                      Text(
+                                        'quizzes'.tr,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.textColor,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      ListView.builder(
+                                        shrinkWrap: true,
+                                        physics:
+                                            const NeverScrollableScrollPhysics(),
+                                        itemCount:
+                                            currentCourse!.quizzes.length,
+                                        itemBuilder: (context, index) {
+                                          final quiz =
+                                              currentCourse!.quizzes[index];
+                                          return CustomCard(
+                                            margin: const EdgeInsets.only(
+                                              bottom: 8,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  width: 50,
+                                                  height: 50,
+                                                  decoration: BoxDecoration(
+                                                    color: AppTheme.accentColor
+                                                        .withValues(alpha: 0.1),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          25,
+                                                        ),
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.quiz,
+                                                    color: AppTheme.accentColor,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 12),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        quiz.title,
+                                                        style: const TextStyle(
+                                                          fontSize: 16,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: AppTheme
+                                                              .textColor,
+                                                        ),
                                                       ),
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        '${quiz.questions.length} questions • ${quiz.timeLimit} min',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: AppTheme
+                                                              .textColor
+                                                              .withValues(
+                                                                alpha: 0.6,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                                CustomButton(
+                                                  text: 'take_quiz'.tr,
+                                                  type: ButtonType.primary,
+                                                  onPressed: () {
+                                                    Get.toNamed(
+                                                      '/student/quiz',
+                                                      arguments: quiz.id,
+                                                    );
+                                                  },
                                                 ),
                                               ],
                                             ),
-                                          ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
                           ),
-
-                        const SizedBox(height: 24),
-
-                        // Worksheets Section
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'worksheets'.tr,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.textColor,
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: _showWorksheetUploadDialog,
-                              icon: const Icon(Icons.add, size: 16),
-                              label: Text('add_worksheet'.tr),
-                              style: TextButton.styleFrom(
-                                foregroundColor: AppTheme.primaryColor,
-                              ),
-                            ),
-                          ],
                         ),
-                        const SizedBox(height: 12),
-                        if (currentCourse!.worksheets.isNotEmpty)
-                          ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: currentCourse!.worksheets.length,
-                            itemBuilder: (context, index) {
-                              final worksheet =
-                                  currentCourse!.worksheets[index];
-                              final isDownloaded =
-                                  worksheetDownloaded[worksheet.id] ?? false;
-                              final isCompleted =
-                                  worksheetCompleted[worksheet.id] ?? false;
-
-                              return CustomCard(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                child: _buildEnhancedWorksheetItem(
-                                  worksheet,
-                                  isDownloaded,
-                                  isCompleted,
-                                ),
-                              );
-                            },
-                          )
-                        else
-                          CustomCard(
-                            child: EmptyStateWidget(
-                              icon: Icons.description_outlined,
-                              title: 'no_worksheets_available'.tr,
-                              description:
-                                  'worksheets_will_be_added_by_instructor'.tr,
-                            ),
-                          ),
-
-                        const SizedBox(height: 24),
-
-                        // Quizzes Section
-                        if (currentCourse!.quizzes.isNotEmpty)
-                          Column(
-                            children: [
-                              Text(
-                                'quizzes'.tr,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.textColor,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              ListView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                itemCount: currentCourse!.quizzes.length,
-                                itemBuilder: (context, index) {
-                                  final quiz = currentCourse!.quizzes[index];
-                                  return CustomCard(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 50,
-                                          height: 50,
-                                          decoration: BoxDecoration(
-                                            color: AppTheme.accentColor
-                                                .withValues(alpha: 0.1),
-                                            borderRadius: BorderRadius.circular(
-                                              25,
-                                            ),
-                                          ),
-                                          child: const Icon(
-                                            Icons.quiz,
-                                            color: AppTheme.accentColor,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                quiz.title,
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: AppTheme.textColor,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '${quiz.questions.length} questions • ${quiz.timeLimit} min',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: AppTheme.textColor
-                                                      .withValues(alpha: 0.6),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        CustomButton(
-                                          text: 'take_quiz'.tr,
-                                          type: ButtonType.primary,
-                                          onPressed: () {
-                                            Get.toNamed(
-                                              '/student/quiz',
-                                              arguments: quiz.id,
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
                       ],
                     ),
                   ),
                 ),
+              ],
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildMobileLayout() {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          // Course Header with Progress
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppTheme.primaryColor,
+                  AppTheme.primaryColor.withValues(alpha: 0.8),
+                ],
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  currentCourse!.title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${'by'.tr} ${currentCourse!.instructorName}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildProgressOverview(),
+              ],
+            ),
+          ),
+
+          // Course Content
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Course Title and Instructor
+                Text(
+                  currentCourse!.title,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.textColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${'by'.tr} ${currentCourse!.instructorName}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: AppTheme.textColor.withValues(alpha: 0.7),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Course Description
+                Text(
+                  currentCourse!.description,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.textColor.withValues(alpha: 0.8),
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Video Player Section (Mobile)
+                // Debug: Check mobile video player condition
+                Builder(
+                  builder: (context) {
+                    print('🔍 Mobile VideoPlayer condition check:');
+                    print('   currentCourse != null: ${currentCourse != null}');
+                    print(
+                      '   videos.isNotEmpty: ${currentCourse?.videos.isNotEmpty}',
+                    );
+                    print('   videos.length: ${currentCourse?.videos.length}');
+                    print('   selectedVideoIndex: $selectedVideoIndex');
+                    print(
+                      '   condition result: ${currentCourse!.videos.isNotEmpty && selectedVideoIndex < currentCourse!.videos.length}',
+                    );
+                    return const SizedBox.shrink();
+                  },
+                ),
+                if (currentCourse!.videos.isNotEmpty &&
+                    selectedVideoIndex < currentCourse!.videos.length) ...[
+                  Container(
+                    height: 250,
+                    margin: const EdgeInsets.only(bottom: 24),
+                    child: VideoPlayerWidget(
+                      key: ValueKey(
+                        'video_${currentCourse!.videos[selectedVideoIndex].id}',
+                      ),
+                      video: currentCourse!.videos[selectedVideoIndex],
+                      onVideoCompleted: () {
+                        // Mark video as completed
+                        setState(() {
+                          videoCompleted[currentCourse!
+                                  .videos[selectedVideoIndex]
+                                  .id] =
+                              true;
+                        });
+                      },
+                      onProgressUpdate: (watchTime) {
+                        // Update video progress
+                        // This could be used to track watch time
+                      },
+                    ),
+                  ),
+                ],
+
+                // Videos Section
+                if (currentCourse!.videos.isNotEmpty) ...[
+                  Text(
+                    'course_videos'.tr,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...currentCourse!.videos.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final video = entry.value;
+                    return _buildVideoItem(video, index);
+                  }),
+                  const SizedBox(height: 24),
+                ],
+
+                // Quizzes Section
+                if (currentCourse!.quizzes.isNotEmpty) ...[
+                  Text(
+                    'quizzes'.tr,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...currentCourse!.quizzes.map((quiz) => _buildQuizItem(quiz)),
+                  const SizedBox(height: 24),
+                ],
+
+                // Worksheets Section
+                if (currentCourse!.worksheets.isNotEmpty) ...[
+                  Text(
+                    'course_resources'.tr,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.textColor,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...currentCourse!.worksheets.map(
+                    (worksheet) => _buildResourceItem(worksheet),
+                  ),
+                ],
               ],
             ),
           ),

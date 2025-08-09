@@ -45,7 +45,7 @@ class QuizListView extends StatelessWidget {
 
   Widget _buildQuizzesList(StudentController controller) {
     final allQuizzes = <QuizModel>[];
-    
+
     // Collect all quizzes from enrolled courses
     for (final course in controller.enrolledCourses) {
       allQuizzes.addAll(course.quizzes);
@@ -56,7 +56,9 @@ class QuizListView extends StatelessWidget {
     }
 
     return Column(
-      children: allQuizzes.map((quiz) => _buildQuizCard(quiz, controller)).toList(),
+      children: allQuizzes
+          .map((quiz) => _buildQuizCard(quiz, controller))
+          .toList(),
     );
   }
 
@@ -108,7 +110,9 @@ class QuizListView extends StatelessWidget {
       child: InkWell(
         onTap: () {
           // Navigate to quiz view with quiz ID
-          Get.toNamed(AppRoutes.quiz, arguments: quiz.id);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            Get.toNamed(AppRoutes.quiz, arguments: quiz.id);
+          });
         },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
@@ -169,18 +173,29 @@ class QuizListView extends StatelessWidget {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  _buildQuizInfo(Icons.help_outline, '${quiz.questions.length} ${'questions'.tr}'),
+                  _buildQuizInfo(
+                    Icons.help_outline,
+                    '${quiz.questions.length} ${'questions'.tr}',
+                  ),
                   const SizedBox(width: 16),
-                  _buildQuizInfo(Icons.timer_outlined, '${quiz.timeLimit} ${'minutes'.tr}'),
+                  _buildQuizInfo(
+                    Icons.timer_outlined,
+                    '${quiz.timeLimit} ${'minutes'.tr}',
+                  ),
                   const Spacer(),
                   ElevatedButton(
                     onPressed: () {
-                      Get.toNamed(AppRoutes.quiz, arguments: quiz.id);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        Get.toNamed(AppRoutes.quiz, arguments: quiz.id);
+                      });
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppTheme.primaryColor,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -200,11 +215,7 @@ class QuizListView extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon,
-          size: 16,
-          color: AppTheme.textColor.withValues(alpha: 0.6),
-        ),
+        Icon(icon, size: 16, color: AppTheme.textColor.withValues(alpha: 0.6)),
         const SizedBox(width: 4),
         Text(
           text,

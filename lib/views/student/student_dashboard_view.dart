@@ -25,6 +25,11 @@ class _StudentDashboardViewState extends State<StudentDashboardView> {
     super.initState();
     // Set dashboard as active tab when entering
     navController.setStudentIndex(0);
+
+    // Ensure student data is loaded
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      controller.loadStudentData();
+    });
   }
 
   void _onNavTap(int index) {
@@ -172,6 +177,8 @@ class _StudentDashboardViewState extends State<StudentDashboardView> {
                     const SizedBox(height: 24),
                     _buildQuickStats(),
                     const SizedBox(height: 24),
+                    _buildCourseDiscoverySection(),
+                    const SizedBox(height: 24),
                     _buildContinueLearningSection(),
                     const SizedBox(height: 24),
                     _buildMyCoursesSection(),
@@ -181,12 +188,19 @@ class _StudentDashboardViewState extends State<StudentDashboardView> {
                 ),
               ),
             ),
-            // My Courses
+            // My Courses - Enhanced with Course Discovery
             RefreshIndicator(
               onRefresh: controller.loadDashboardData,
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16.0),
-                child: _buildMyCoursesSection(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildCourseDiscoverySection(),
+                    const SizedBox(height: 24),
+                    _buildMyCoursesSection(),
+                  ],
+                ),
               ),
             ),
             // Quizzes
@@ -418,7 +432,11 @@ class _StudentDashboardViewState extends State<StudentDashboardView> {
               ),
               const SizedBox(width: 16),
               ElevatedButton(
-                onPressed: () => Get.toNamed('/student/course/${course.id}'),
+                onPressed: () {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    Get.toNamed('/student/course/${course.id}');
+                  });
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.primaryColor,
                   foregroundColor: Colors.white,
@@ -427,6 +445,87 @@ class _StudentDashboardViewState extends State<StudentDashboardView> {
                   ),
                 ),
                 child: Text('continue'.tr),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCourseDiscoverySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'discover_courses'.tr,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppTheme.textColor,
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  Get.toNamed('/student/course-discovery');
+                });
+              },
+              child: Text('browse_all'.tr),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppTheme.accentColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppTheme.accentColor.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.explore, color: AppTheme.accentColor, size: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'explore_new_courses'.tr,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.textColor,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'discover_courses_description'.tr,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: AppTheme.textColor.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton(
+                onPressed: () => Get.toNamed('/student/course-discovery'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.accentColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text('browse'.tr),
               ),
             ],
           ),
@@ -473,7 +572,11 @@ class _StudentDashboardViewState extends State<StudentDashboardView> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: InkWell(
-                    onTap: () => Get.toNamed('/student/course/${course.id}'),
+                    onTap: () {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        Get.toNamed('/student/course/${course.id}');
+                      });
+                    },
                     borderRadius: BorderRadius.circular(12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

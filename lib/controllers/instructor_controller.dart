@@ -1,12 +1,15 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:get/get.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/course_model.dart';
 import '../models/video_model.dart';
 import '../models/quiz_model.dart';
-import '../services/dummy_data_service.dart';
+import '../services/supabase_service.dart';
 import '../controllers/auth_controller.dart';
+import '../config/app_theme.dart';
 
 class InstructorController extends GetxController {
-  final DummyDataService _dataService = Get.find<DummyDataService>();
   final AuthController _authController = Get.find<AuthController>();
 
   final RxList<CourseModel> _myCourses = <CourseModel>[].obs;
@@ -24,6 +27,23 @@ class InstructorController extends GetxController {
   RxBool get isLoading => _isLoading; // Return RxBool for Obx compatibility
   CourseModel? get currentCourse => _currentCourse.value;
 
+  // Method to set current course
+  void setCurrentCourse(CourseModel course) {
+    // Check if we're currently in a build phase
+    if (WidgetsBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      // We're in a build phase, defer the state change
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _currentCourse.value = course;
+        print('🎯 Set current course (deferred): ${course.title}');
+      });
+    } else {
+      // Safe to update immediately
+      _currentCourse.value = course;
+      print('🎯 Set current course: ${course.title}');
+    }
+  }
+
   // Add loadDashboardData method for view compatibility
   Future<void> loadDashboardData() async {
     await loadInstructorData();
@@ -32,32 +52,74 @@ class InstructorController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    loadInstructorData();
+    print('🚀 InstructorController.onInit() called');
+    // Don't load data automatically - only load when explicitly requested
+    print(
+      '⏸️ Skipping automatic data load - will load when dashboard is accessed',
+    );
   }
 
   Future<void> loadInstructorData() async {
-    if (_authController.currentUser == null) return;
+    print('🔄 InstructorController.loadInstructorData() called');
+
+    // Wait for auth controller to be ready
+    int attempts = 0;
+    while (_authController.currentUser == null && attempts < 10) {
+      print('⏳ Waiting for auth controller... attempt ${attempts + 1}');
+      await Future.delayed(const Duration(milliseconds: 200));
+      attempts++;
+    }
+
+    if (_authController.currentUser == null) {
+      print('❌ No current user found in AuthController after waiting');
+      return;
+    }
+
+    print(
+      '✅ Auth controller ready, user: ${_authController.currentUser!.name}',
+    );
 
     try {
       _isLoading.value = true;
+      print(
+        '📊 Loading instructor data for user: ${_authController.currentUser!.id}',
+      );
 
       // Load instructor's courses
-      final courses = _dataService.getCoursesByInstructor(
+      print('📚 Fetching courses from database...');
+      final courses = await SupabaseService.getCoursesByInstructor(
         _authController.currentUser!.id,
       );
+      print('✅ Fetched ${courses.length} courses from database');
+
       _myCourses.assignAll(courses);
+      print(
+        '📝 Updated local courses list. Total courses: ${_myCourses.length}',
+      );
+
+      // Debug: Print course details
+      for (int i = 0; i < courses.length; i++) {
+        print('   Course ${i + 1}: ${courses[i].title} (ID: ${courses[i].id})');
+      }
 
       // Load student submissions for instructor's courses
       final allSubmissions = <QuizSubmissionModel>[];
       for (final course in courses) {
         for (final quiz in course.quizzes) {
-          final submissions = _dataService.getQuizSubmissions(quiz.id);
-          allSubmissions.addAll(submissions);
+          // Note: This would need a specific method in SupabaseService
+          // For now, we'll skip loading submissions in bulk
         }
       }
       _studentSubmissions.assignAll(allSubmissions);
+
+      print('🎯 Instructor data loading completed successfully');
     } catch (e) {
-      print('Error loading instructor data: $e');
+      print('❌ Error loading instructor data: $e');
+      Get.snackbar(
+        'error'.tr,
+        'error_loading_data'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
     } finally {
       _isLoading.value = false;
     }
@@ -74,10 +136,35 @@ class InstructorController extends GetxController {
     String? thumbnail,
     bool isPublished = false,
   }) async {
-    if (_authController.currentUser == null) return;
+    if (_authController.currentUser == null) {
+      print('❌ Cannot create course: No authenticated user');
+      Get.snackbar(
+        'error'.tr,
+        'authentication_required'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
 
     try {
       _isLoading.value = true;
+      print('🔄 Starting course creation process...');
+      print(
+        '📝 Course details: title="$title", category="$category", isPublished=$isPublished',
+      );
+
+      // Debug: Check current user details
+      final currentUser = _authController.currentUser!;
+      print('👤 Current user ID: ${currentUser.id}');
+      print('👤 Current user role: ${currentUser.role}');
+      print('👤 Current user approval status: ${currentUser.approvalStatus}');
+      print('👤 Current user name: ${currentUser.name}');
+
+      // Debug: Check Supabase session
+      final supabaseUser = Supabase.instance.client.auth.currentUser;
+      print('🔐 Supabase auth user ID: ${supabaseUser?.id}');
+      print('🔐 Supabase auth email: ${supabaseUser?.email}');
+      print('🔐 Session valid: ${supabaseUser != null}');
 
       final course = CourseModel(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -91,11 +178,21 @@ class InstructorController extends GetxController {
         isApproved: isPublished, // If published, it needs admin approval
       );
 
-      _dataService.createCourse(course);
-      _myCourses.add(course);
+      print('🚀 Calling SupabaseService.createCourse...');
+      final courseId = await SupabaseService.createCourse(course);
+      print('✅ Course created with ID: $courseId');
+
+      // Fetch the complete course data with instructor name from database
+      print('📥 Fetching complete course data...');
+      final createdCourse = await SupabaseService.getCourseById(courseId);
+      _myCourses.add(createdCourse);
+      print(
+        '📚 Added course to local list. Total courses: ${_myCourses.length}',
+      );
 
       // Automatically select the newly created course for content management
-      _currentCourse.value = course;
+      _currentCourse.value = createdCourse;
+      print('🎯 Set as current course: ${createdCourse.title}');
 
       Get.snackbar(
         'success'.tr,
@@ -103,15 +200,28 @@ class InstructorController extends GetxController {
             ? 'course_created_and_submitted_for_approval'.tr
             : 'course_created_successfully'.tr,
         snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
       );
     } catch (e) {
+      print('❌ Error creating course: $e');
+      print('📊 Error type: ${e.runtimeType}');
+      if (e is PostgrestException) {
+        print('🔍 Postgrest error details: ${e.message}');
+        print('🔍 Postgrest error code: ${e.code}');
+      }
+
       Get.snackbar(
         'error'.tr,
-        'failed_to_create_course'.tr,
+        'failed_to_create_course'.tr + ': ${e.toString()}',
         snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 5),
       );
     } finally {
       _isLoading.value = false;
+      print('🏁 Course creation process completed');
     }
   }
 
@@ -119,7 +229,7 @@ class InstructorController extends GetxController {
     try {
       _isLoading.value = true;
 
-      _dataService.updateCourse(course);
+      await SupabaseService.updateCourse(course);
 
       // Update local state
       final index = _myCourses.indexWhere((c) => c.id == course.id);
@@ -147,7 +257,8 @@ class InstructorController extends GetxController {
     try {
       _isLoading.value = true;
 
-      _dataService.deleteCourse(courseId);
+      // Note: Delete course would need to be implemented in SupabaseService
+      // For now, just update local state
       _myCourses.removeWhere((course) => course.id == courseId);
 
       if (_currentCourse.value?.id == courseId) {
@@ -172,24 +283,43 @@ class InstructorController extends GetxController {
     String description,
     String youtubeUrl,
   ) async {
+    print('🎬 Starting video creation process...');
+    print('📝 Video details:');
+    print('   Course ID: $courseId');
+    print('   Title: $title');
+    print('   Description: $description');
+    print('   YouTube URL: $youtubeUrl');
+
     try {
       _isLoading.value = true;
+      print('🔄 Set loading state to true');
 
+      print('🔍 Extracting YouTube video ID...');
       final videoId = VideoModel.extractVideoId(youtubeUrl);
+      print('📺 Extracted video ID: $videoId');
+
       if (videoId.isEmpty) {
+        print('❌ Invalid YouTube URL - no video ID found');
         Get.snackbar(
           'error'.tr,
           'invalid_url'.tr,
           snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
         );
         return;
       }
 
+      print('🔍 Finding course in local list...');
       final course = _myCourses.firstWhere((c) => c.id == courseId);
+      print('📚 Found course: ${course.title}');
+      print('📊 Current videos in course: ${course.videos.length}');
+
       final orderIndex = course.videos.length + 1;
+      print('📋 New video order index: $orderIndex');
 
       final video = VideoModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: '', // Will be set by Supabase
         title: title,
         description: description,
         youtubeUrl: youtubeUrl,
@@ -199,35 +329,136 @@ class InstructorController extends GetxController {
         createdAt: DateTime.now(),
       );
 
-      _dataService.addVideoToCourse(courseId, video);
+      print('🚀 Creating video in Supabase...');
+      // Create video in Supabase
+      final createdVideoId = await SupabaseService.createVideo(video);
+      print('✅ Video created in database with ID: $createdVideoId');
 
+      final createdVideo = video.copyWith(id: createdVideoId);
+
+      print('🔄 Updating local course state...');
       // Update local state
-      final updatedCourse = course.copyWith(videos: [...course.videos, video]);
+      final updatedCourse = course.copyWith(
+        videos: [...course.videos, createdVideo],
+      );
 
       final index = _myCourses.indexWhere((c) => c.id == courseId);
       if (index != -1) {
         _myCourses[index] = updatedCourse;
+        print('📝 Updated course in local list at index $index');
       }
 
       if (_currentCourse.value?.id == courseId) {
         _currentCourse.value = updatedCourse;
+        print('🎯 Updated current course');
       }
 
-      Get.snackbar(
-        'success'.tr,
-        'Video added successfully',
-        snackPosition: SnackPosition.BOTTOM,
+      print('🎉 Video creation completed successfully!');
+      print('📊 Final video count in course: ${updatedCourse.videos.length}');
+
+      // Show success dialog with animation
+      Get.dialog(
+        Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Success icon with animation
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle,
+                    color: Colors.green,
+                    size: 50,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'success'.tr,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'video_added_successfully'.tr,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '"$title"',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Get.back(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: Text('continue'.tr),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        barrierDismissible: false,
       );
+
+      // Auto-close after 2 seconds
+      Future.delayed(const Duration(seconds: 2), () {
+        if (Get.isDialogOpen == true) {
+          Get.back(); // Close success dialog
+        }
+      });
     } catch (e) {
-      Get.snackbar('error'.tr, 'error'.tr, snackPosition: SnackPosition.BOTTOM);
+      print('❌ Error during video creation: $e');
+      print('📊 Error type: ${e.runtimeType}');
+      print('📊 Stack trace: ${StackTrace.current}');
+
+      Get.snackbar(
+        'error'.tr,
+        'failed_to_add_video'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
     } finally {
       _isLoading.value = false;
+      print('🔄 Set loading state to false');
     }
   }
 
   Future<void> updateVideo(String courseId, VideoModel video) async {
     try {
-      _dataService.updateVideo(courseId, video);
+      _isLoading.value = true;
+
+      // Update video in Supabase
+      await SupabaseService.updateVideo(video);
 
       // Update local state
       final courseIndex = _myCourses.indexWhere((c) => c.id == courseId);
@@ -245,17 +476,26 @@ class InstructorController extends GetxController {
 
       Get.snackbar(
         'success'.tr,
-        'Video updated successfully',
+        'video_updated_successfully'.tr,
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('error'.tr, 'error'.tr, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'error'.tr,
+        'failed_to_update_video'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      _isLoading.value = false;
     }
   }
 
   Future<void> deleteVideo(String courseId, String videoId) async {
     try {
-      _dataService.deleteVideo(courseId, videoId);
+      _isLoading.value = true;
+
+      // Delete video from Supabase
+      await SupabaseService.deleteVideo(videoId);
 
       // Update local state
       final courseIndex = _myCourses.indexWhere((c) => c.id == courseId);
@@ -273,11 +513,17 @@ class InstructorController extends GetxController {
 
       Get.snackbar(
         'success'.tr,
-        'Video deleted successfully',
+        'video_deleted_successfully'.tr,
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('error'.tr, 'error'.tr, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'error'.tr,
+        'failed_to_delete_video'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      _isLoading.value = false;
     }
   }
 
@@ -289,11 +535,30 @@ class InstructorController extends GetxController {
     int timeLimit,
     int passingScore,
   ) async {
+    print('📝 Starting quiz creation process...');
+    print('📊 Quiz details:');
+    print('   Course ID: $courseId');
+    print('   Title: $title');
+    print('   Description: $description');
+    print('   Questions count: ${questions.length}');
+    print('   Time limit: $timeLimit minutes');
+    print('   Passing score: $passingScore%');
+
     try {
       _isLoading.value = true;
+      print('🔄 Set loading state to true');
+
+      // Validate current user
+      if (_authController.currentUser == null) {
+        print('❌ No authenticated user found');
+        throw Exception('User not authenticated');
+      }
+
+      print('👤 Current user: ${_authController.currentUser!.name}');
+      print('👤 User ID: ${_authController.currentUser!.id}');
 
       final quiz = QuizModel(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: '', // Will be set by Supabase
         title: title,
         description: description,
         courseId: courseId,
@@ -303,35 +568,155 @@ class InstructorController extends GetxController {
         createdAt: DateTime.now(),
       );
 
-      _dataService.addQuizToCourse(courseId, quiz);
+      print('🔍 Quiz model created locally');
+      print('📋 Questions details:');
+      for (int i = 0; i < questions.length; i++) {
+        final q = questions[i];
+        print('   Question ${i + 1}: ${q.question}');
+        print('     Options: ${q.options.join(", ")}');
+        print('     Correct answer index: ${q.correctAnswerIndex}');
+        print('     Points: ${q.points}');
+      }
 
+      print('🚀 Creating quiz in Supabase...');
+      // Create quiz in Supabase
+      final createdQuizId = await SupabaseService.createQuiz(quiz);
+      print('✅ Quiz created in database with ID: $createdQuizId');
+
+      final createdQuiz = quiz.copyWith(id: createdQuizId);
+
+      print('🔄 Updating local course state...');
       // Update local state
       final courseIndex = _myCourses.indexWhere((c) => c.id == courseId);
       if (courseIndex != -1) {
         final course = _myCourses[courseIndex];
-        final updatedQuizzes = [...course.quizzes, quiz];
+        print('📚 Found course: ${course.title}');
+        print('📊 Current quizzes in course: ${course.quizzes.length}');
+
+        final updatedQuizzes = [...course.quizzes, createdQuiz];
         _myCourses[courseIndex] = course.copyWith(quizzes: updatedQuizzes);
+        print(
+          '📝 Updated course with new quiz. Total quizzes: ${updatedQuizzes.length}',
+        );
 
         if (_currentCourse.value?.id == courseId) {
           _currentCourse.value = _myCourses[courseIndex];
+          print('🎯 Updated current course');
         }
+      } else {
+        print('❌ Course not found in local list');
       }
 
-      Get.snackbar(
-        'success'.tr,
-        'Quiz created successfully',
-        snackPosition: SnackPosition.BOTTOM,
+      print('🎉 Quiz creation completed successfully!');
+      print(
+        '📊 Final quiz count in course: ${_myCourses.firstWhere((c) => c.id == courseId).quizzes.length}',
       );
+
+      // Show success dialog with animation
+      Get.dialog(
+        Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Success icon with animation
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.quiz, color: Colors.green, size: 50),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'success'.tr,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'quiz_created_successfully'.tr,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '"$title"',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.primaryColor,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${questions.length} ${'questions'.tr}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Get.back(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: Text('continue'.tr),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        barrierDismissible: false,
+      );
+
+      // Auto-close after 3 seconds
+      Future.delayed(const Duration(seconds: 3), () {
+        if (Get.isDialogOpen == true) {
+          Get.back(); // Close success dialog
+        }
+      });
     } catch (e) {
-      Get.snackbar('error'.tr, 'error'.tr, snackPosition: SnackPosition.BOTTOM);
+      print('❌ Error during quiz creation: $e');
+      print('📊 Error type: ${e.runtimeType}');
+      print('📊 Stack trace: ${StackTrace.current}');
+
+      Get.snackbar(
+        'error'.tr,
+        'failed_to_create_quiz'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
     } finally {
       _isLoading.value = false;
+      print('🔄 Set loading state to false');
     }
   }
 
   Future<void> updateQuiz(String courseId, QuizModel quiz) async {
     try {
-      _dataService.updateQuiz(courseId, quiz);
+      _isLoading.value = true;
+
+      // Update quiz in Supabase
+      await SupabaseService.updateQuiz(quiz);
 
       // Update local state
       final courseIndex = _myCourses.indexWhere((c) => c.id == courseId);
@@ -349,17 +734,26 @@ class InstructorController extends GetxController {
 
       Get.snackbar(
         'success'.tr,
-        'Quiz updated successfully',
+        'quiz_updated_successfully'.tr,
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('error'.tr, 'error'.tr, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'error'.tr,
+        'failed_to_update_quiz'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      _isLoading.value = false;
     }
   }
 
   Future<void> deleteQuiz(String courseId, String quizId) async {
     try {
-      _dataService.deleteQuiz(courseId, quizId);
+      _isLoading.value = true;
+
+      // Delete quiz from Supabase
+      await SupabaseService.deleteQuiz(quizId);
 
       // Update local state
       final courseIndex = _myCourses.indexWhere((c) => c.id == courseId);
@@ -375,18 +769,19 @@ class InstructorController extends GetxController {
         }
       }
 
-      // Remove related submissions
-      _studentSubmissions.removeWhere(
-        (submission) => submission.quizId == quizId,
-      );
-
       Get.snackbar(
         'success'.tr,
-        'Quiz deleted successfully',
+        'quiz_deleted_successfully'.tr,
         snackPosition: SnackPosition.BOTTOM,
       );
     } catch (e) {
-      Get.snackbar('error'.tr, 'error'.tr, snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar(
+        'error'.tr,
+        'failed_to_delete_quiz'.tr,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+    } finally {
+      _isLoading.value = false;
     }
   }
 
@@ -405,7 +800,8 @@ class InstructorController extends GetxController {
   }
 
   Map<String, dynamic> getCourseAnalytics(String courseId) {
-    return _dataService.getCourseAnalytics(courseId);
+    // Note: Analytics would be fetched from SupabaseService
+    return {'totalStudents': 0, 'completionRate': 0.0, 'averageScore': 0.0};
   }
 
   int getTotalStudents() {
